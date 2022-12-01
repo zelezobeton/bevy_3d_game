@@ -85,7 +85,7 @@ fn move_player(
 
 fn setup_camera(mut commands: Commands) {
     commands
-        .spawn_bundle(PerspectiveCameraBundle {
+        .spawn(Camera3dBundle {
             transform: Transform::from_translation(Vec3::from(DEFAULT_CAMERA_POS))
                 .looking_at(Vec3::from(DEFAULT_PLAYER_POS), Vec3::Y), // focus rotation of camera on player
             ..default()
@@ -96,7 +96,7 @@ fn setup_camera(mut commands: Commands) {
 fn setup_light(mut commands: Commands) {
     const HALF_SIZE: f32 = 100.0;
 
-    commands.spawn_bundle(DirectionalLightBundle {
+    commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
             illuminance: 10000.0,
             // Configure the projection to better fit the scene
@@ -130,8 +130,7 @@ fn spawn_ground(
     let ground_height = 0.1;
 
     let ground = commands
-        .spawn()
-        .insert_bundle(PbrBundle {
+        .spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(render_shape::Box::new(
                 ground_size,
                 ground_height,
@@ -152,8 +151,7 @@ fn spawn_ground(
     for pos in cubes_positions {
         let vec_pos = Vec3::from(pos);
         commands
-            .spawn()
-            .insert_bundle	(PbrBundle {
+            .spawn(PbrBundle {
                 mesh		: meshes.add(Mesh::from(cube)),
                 material	: materials.add(Color::CRIMSON.into()),
                 transform	: Transform::from_xyz(0.0, 1.0, 0.0),
@@ -162,7 +160,7 @@ fn spawn_ground(
             .insert(RigidBody::Dynamic)
             .insert(Collider::cuboid(0.5, 0.5, 0.5))
             .insert(Restitution::coefficient(0.7))
-            .insert_bundle(TransformBundle::from(Transform::from_translation(vec_pos)));
+            .insert(TransformBundle::from(Transform::from_translation(vec_pos)));
     }
 
     let sphere = render_shape::Capsule {
@@ -170,8 +168,7 @@ fn spawn_ground(
         ..default()
     };
     commands
-        .spawn()
-        .insert_bundle	(PbrBundle {
+        .spawn(PbrBundle {
             mesh		: meshes.add(Mesh::from(sphere)),
             material	: materials.add(Color::GOLD.into()),
             transform	: Transform::from_xyz(0.0, 1.0, 0.0),
@@ -180,7 +177,7 @@ fn spawn_ground(
         .insert(RigidBody::Dynamic)
         .insert(Collider::ball(0.5))
         .insert(Restitution::coefficient(0.7))
-        .insert_bundle(TransformBundle::from(Transform::from_xyz(1.0, 0.0, 1.0)));
+        .insert(TransformBundle::from(Transform::from_xyz(1.0, 0.0, 1.0)));
 }
 
 fn spawn_player(
@@ -194,9 +191,8 @@ fn spawn_player(
         ..default()
     };
     commands
-        .spawn()
-        .insert(Player)
-        .insert_bundle	(PbrBundle {
+        .spawn(Player)
+        .insert	(PbrBundle {
 			mesh		: meshes.add(Mesh::from(capsule)),
 			material	: materials.add(Color::NAVY.into()),
 			transform	: Transform::from_xyz(0.0, 1.0, 0.0),
