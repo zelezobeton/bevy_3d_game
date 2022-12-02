@@ -1,12 +1,17 @@
 /*
 TODO:
-- Try adding human mesh to character
+- Rotate enemy to direction it's moving
 
 - Spawn creatures that interact with character, chase him, hurt him, etc.
+- Add levels with different layout, platforms etc. 
+- Add items that player can collect
 - Refine player movement
 - Add movement around Y-axis with mouse
 
 DONE:
+- Make enemy move towards player
+- Rotate character to direction it's moving
+- Add human mesh to character
 - Merge code back to original git repo
 - Make camera focus and follow character
 - Move character with keyboard using velocity
@@ -15,7 +20,8 @@ DONE:
 
 use bevy::prelude::*;
 use bevy::render::mesh::shape as render_shape;
-use bevy_rapier3d::prelude::*;
+use bevy_rapier3d::{prelude::*, na::ComplexField};
+use std::f32::consts::{PI, FRAC_PI_2};
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 enum GameState {
@@ -27,6 +33,9 @@ struct Player;
 
 #[derive(Component)]
 struct Camera;
+
+#[derive(Component)]
+struct Enemy;
 
 // Should I work with entity IDs for these entities?
 // #[derive(Default)]
@@ -53,21 +62,26 @@ fn move_camera(
 
 fn move_player(
     keyboard_input: Res<Input<KeyCode>>,
-    mut velocities: Query<&mut Velocity, With<Player>>
+    mut velocities: Query<&mut Velocity, With<Player>>,
+    mut player_transform: Query<&mut Transform, With<Player>>
 ) {
     const SPEED: f32 = 7.0;
     let mut vel = velocities.single_mut();
     if keyboard_input.pressed(KeyCode::Up) {
         vel.linvel[0] = SPEED;
+        player_transform.single_mut().rotation = Quat::from_rotation_y(0.0);
     }
     else if keyboard_input.pressed(KeyCode::Down) {
         vel.linvel[0] = -SPEED;
+        player_transform.single_mut().rotation = Quat::from_rotation_y(PI);
     }
     else if keyboard_input.pressed(KeyCode::Left) {
         vel.linvel[2] = -SPEED;
+        player_transform.single_mut().rotation = Quat::from_rotation_y(FRAC_PI_2);
     }
     else if keyboard_input.pressed(KeyCode::Right) {
         vel.linvel[2] = SPEED;
+        player_transform.single_mut().rotation = Quat::from_rotation_y(-FRAC_PI_2);
     }
     else {
         vel.linvel[0] = 0.0;
@@ -81,6 +95,26 @@ fn move_player(
 
     // Custom gravity
     // vel.linvel[1] -= 1.0;
+}
+
+fn move_enemy(
+    mut velocities: Query<&mut Velocity, With<Enemy>>,
+    mut enemy_transform: Query<&mut Transform, (With<Enemy>, Without<Player>)>,
+    mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>)>
+) {
+    const SPEED: f32 = 6.0;
+    let mut vel = velocities.single_mut();
+
+    let mut my_vec = player_transform.single_mut().translation - enemy_transform.single_mut().translation;
+    my_vec = my_vec.normalize();
+
+    // Calculate distance of vectors, so enemy chases player only until it's near him
+    let x = player_transform.single_mut().translation[0] - enemy_transform.single_mut().translation[0];
+    let y = player_transform.single_mut().translation[2] - enemy_transform.single_mut().translation[2];
+    if (x.powf(2.0) + y.powf(2.0)).powf(0.5) > 1.4 {
+        vel.linvel[0] = my_vec[0] * SPEED;
+        vel.linvel[2] = my_vec[2] * SPEED;
+    }
 }
 
 fn setup_camera(mut commands: Commands) {
@@ -121,7 +155,8 @@ fn setup_light(mut commands: Commands) {
     });
 }
 
-fn spawn_ground(
+fn spawn_level(
+    asset_server: &Res<AssetServer>,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     commands: &mut Commands
@@ -129,7 +164,8 @@ fn spawn_ground(
     let ground_size = 20.1;
     let ground_height = 0.1;
 
-    let ground = commands
+    // Spawn ground
+    commands
         .spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(render_shape::Box::new(
                 ground_size,
@@ -139,13 +175,26 @@ fn spawn_ground(
             // material	: materials.add(Color::rgb(0.8, 0.8, 0.8).into()),
             material: materials.add(Color::DARK_GREEN.into()),
             transform: Transform::from_xyz(0.0, -ground_height, 0.0),
-            ..Default::default()
+            ..default()
         })
         .insert(Collider::cuboid(ground_size/2.0, ground_height/2.0, ground_size/2.0))
         .insert(Transform::from_xyz(0.0, -ground_height, 0.0))
-        .insert(GlobalTransform::default())
-        .id();
+        .insert(GlobalTransform::default());
     
+    // Spawn platform
+    commands
+        .spawn(PbrBundle {
+            mesh		: meshes.add(Mesh::from(render_shape::Box::new(5.0, 0.5, 5.0))),
+            material	: materials.add(Color::YELLOW.into()),
+            transform	: Transform::from_xyz(0.0, 1.0, 0.0),
+            ..default()
+        })
+        .insert(RigidBody::Fixed)
+        .insert(Collider::cuboid(5.0/2.0, 0.5/2.0, 5.0/2.0))
+        .insert(Restitution::coefficient(0.7))
+        .insert(TransformBundle::from(Transform::from_translation(Vec3::from([5.0, 3.0, 5.0]))));
+    
+    // Spawn cubes
     let cube = render_shape::Cube::default();
     let cubes_positions = [[2.0, 1.0, 2.0], [-2.0, 1.0, 2.0], [2.0, 1.0, -2.0], [-2.0, 1.0, -2.0]];
     for pos in cubes_positions {
@@ -163,6 +212,7 @@ fn spawn_ground(
             .insert(TransformBundle::from(Transform::from_translation(vec_pos)));
     }
 
+    // Spawn sphere
     let sphere = render_shape::Capsule {
         depth: 0.0,
         ..default()
@@ -178,33 +228,51 @@ fn spawn_ground(
         .insert(Collider::ball(0.5))
         .insert(Restitution::coefficient(0.7))
         .insert(TransformBundle::from(Transform::from_xyz(1.0, 0.0, 1.0)));
+    
+    // Spawn alien
+    commands
+        .spawn(Enemy)
+        .insert(PbrBundle {
+            transform: Transform::from_xyz(-5.0, 1.0, -5.0),
+            ..default()
+        })
+        .with_children(|cell| {
+            cell.spawn(SceneBundle {
+                scene: asset_server.load("models/AlienCake/alien.glb#Scene0"), 
+                transform: Transform {
+                    translation: Vec3::new(0.0, -1.0, 0.0),
+                    rotation: Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
+                    scale:  Vec3::new(2.0, 2.0, 2.0),
+                },
+                ..default()});
+        })
+        .insert(RigidBody::Dynamic)
+        .insert(Velocity::zero())
+        .insert(LockedAxes::ROTATION_LOCKED)
+        .insert(Collider::capsule_y(0.5, 0.5))
+        .insert(Restitution::coefficient(0.7));
 }
 
 fn spawn_player(
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
-    asset_server: Res<AssetServer>,
+    asset_server: &Res<AssetServer>,
     commands: &mut Commands,
 ) {
-    let capsule = render_shape::Capsule {
-        depth: 1.0,
-        ..default()
-    };
     commands
         .spawn(Player)
         .insert	(PbrBundle {
-			mesh		: meshes.add(Mesh::from(capsule)),
-			material	: materials.add(Color::NAVY.into()),
-			transform	: Transform::from_xyz(0.0, 1.0, 0.0),
-			..Default::default()
+			transform: Transform::from_xyz(0.0, 1.0, 0.0),
+			..default()
 		})
-        // .insert_bundle(TransformBundle {
-        //     local: Transform::from_xyz(0.0, 1.0, 0.0),
-        //     global: GlobalTransform::identity(),
-        // })
-        // .with_children(|cell| {
-        //     cell.spawn_scene(asset_server.load("models/AlienCake/characterDigger.glb#Scene0"));
-        // })
+        .with_children(|cell| {
+            cell.spawn(SceneBundle {
+                scene: asset_server.load("models/AlienCake/characterDigger.glb#Scene0"), 
+                transform: Transform {
+                    translation: Vec3::new(0.0, -1.0, 0.0),
+                    rotation: Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
+                    scale:  Vec3::new(2.0, 2.0, 2.0),
+                },
+                ..default()});
+        })
         .insert(RigidBody::Dynamic)
         .insert(Velocity::zero())
         .insert(LockedAxes::ROTATION_LOCKED)
@@ -220,8 +288,8 @@ fn setup_physics(
     asset_server: Res<AssetServer>,
     mut commands: Commands
 ) {
-    spawn_ground(&mut meshes, &mut materials, &mut commands);
-    spawn_player(&mut meshes, &mut materials, asset_server, &mut commands);
+    spawn_level(&asset_server, &mut meshes, &mut materials, &mut commands);
+    spawn_player(&asset_server, &mut commands);
 }
 
 fn main() {
@@ -237,6 +305,7 @@ fn main() {
             SystemSet::on_update(GameState::Playing)
                 .with_system(move_player)
                 .with_system(move_camera)
+                .with_system(move_enemy)
         )
         .run();
 }
