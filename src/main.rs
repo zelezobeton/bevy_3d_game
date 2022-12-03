@@ -1,14 +1,14 @@
 /*
 TODO:
-- Rotate enemy to direction it's moving
+- Add items that player can collect
 
 - Spawn creatures that interact with character, chase him, hurt him, etc.
 - Add levels with different layout, platforms etc. 
-- Add items that player can collect
-- Refine player movement
 - Add movement around Y-axis with mouse
+- Refine player movement
 
 DONE:
+- Rotate enemy to direction it's moving
 - Make enemy move towards player
 - Rotate character to direction it's moving
 - Add human mesh to character
@@ -20,7 +20,7 @@ DONE:
 
 use bevy::prelude::*;
 use bevy::render::mesh::shape as render_shape;
-use bevy_rapier3d::{prelude::*, na::ComplexField};
+use bevy_rapier3d::prelude::*;
 use std::f32::consts::{PI, FRAC_PI_2};
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
@@ -87,7 +87,6 @@ fn move_player(
         vel.linvel[0] = 0.0;
         vel.linvel[2] = 0.0;
     }
-
     
     if keyboard_input.just_pressed(KeyCode::Space) {
         vel.linvel[1] = 5.0;
@@ -105,16 +104,21 @@ fn move_enemy(
     const SPEED: f32 = 6.0;
     let mut vel = velocities.single_mut();
 
-    let mut my_vec = player_transform.single_mut().translation - enemy_transform.single_mut().translation;
-    my_vec = my_vec.normalize();
+    // Get vector representing direction from enemy to player
+    let mut direction_vec = player_transform.single_mut().translation - enemy_transform.single_mut().translation;
+    direction_vec = direction_vec.normalize();
 
     // Calculate distance of vectors, so enemy chases player only until it's near him
-    let x = player_transform.single_mut().translation[0] - enemy_transform.single_mut().translation[0];
-    let y = player_transform.single_mut().translation[2] - enemy_transform.single_mut().translation[2];
-    if (x.powf(2.0) + y.powf(2.0)).powf(0.5) > 1.4 {
-        vel.linvel[0] = my_vec[0] * SPEED;
-        vel.linvel[2] = my_vec[2] * SPEED;
+    let vec2_player = Vec2::new(player_transform.single_mut().translation[0], player_transform.single_mut().translation[2]);
+    let vec2_enemy = Vec2::new(enemy_transform.single_mut().translation[0], enemy_transform.single_mut().translation[2]);
+    if vec2_player.distance(vec2_enemy) > 1.4 {
+        vel.linvel[0] = direction_vec[0] * SPEED;
+        vel.linvel[2] = direction_vec[2] * SPEED;
     }
+
+    // Rotate ememy in direction it's moving
+    let dir_angle = (direction_vec.x).atan2(direction_vec.z);
+    enemy_transform.single_mut().rotation = Quat::from_rotation_y(dir_angle);
 }
 
 fn setup_camera(mut commands: Commands) {
@@ -172,7 +176,6 @@ fn spawn_level(
                 ground_height,
                 ground_size,
             ))),
-            // material	: materials.add(Color::rgb(0.8, 0.8, 0.8).into()),
             material: materials.add(Color::DARK_GREEN.into()),
             transform: Transform::from_xyz(0.0, -ground_height, 0.0),
             ..default()
@@ -241,7 +244,7 @@ fn spawn_level(
                 scene: asset_server.load("models/AlienCake/alien.glb#Scene0"), 
                 transform: Transform {
                     translation: Vec3::new(0.0, -1.0, 0.0),
-                    rotation: Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
+                    rotation: Quat::from_rotation_y(PI),
                     scale:  Vec3::new(2.0, 2.0, 2.0),
                 },
                 ..default()});
