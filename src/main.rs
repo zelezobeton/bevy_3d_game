@@ -18,10 +18,11 @@ DONE:
 - Add jump
 */
 
-use bevy::prelude::*;
+use bevy::{ecs::schedule::SystemSet, prelude::*};
 use bevy::render::mesh::shape as render_shape;
 use bevy_rapier3d::prelude::*;
 use std::f32::consts::{PI, FRAC_PI_2};
+use rand::Rng;
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 enum GameState {
@@ -36,6 +37,22 @@ struct Camera;
 
 #[derive(Component)]
 struct Enemy;
+
+#[derive(Default)]
+struct Bonus {
+    entity: Option<Entity>,
+    x: f32,
+    z: f32,
+    handle: Handle<Scene>,
+}
+
+#[derive(Resource, Default)]
+struct Game {
+    bonus: Bonus,
+}
+
+#[derive(Resource)]
+struct BonusSpawnTimer(Timer);
 
 // Should I work with entity IDs for these entities?
 // #[derive(Default)]
@@ -63,7 +80,9 @@ fn move_camera(
 fn move_player(
     keyboard_input: Res<Input<KeyCode>>,
     mut velocities: Query<&mut Velocity, With<Player>>,
-    mut player_transform: Query<&mut Transform, With<Player>>
+    mut player_transform: Query<&mut Transform, With<Player>>,
+    mut game: ResMut<Game>,
+    mut commands: Commands,
 ) {
     const SPEED: f32 = 7.0;
     let mut vel = velocities.single_mut();
@@ -94,6 +113,16 @@ fn move_player(
 
     // Custom gravity
     // vel.linvel[1] -= 1.0;
+    
+    // Get bonus
+    if let Some(entity) = game.bonus.entity {
+        let player_pos = Vec2::new(player_transform.single_mut().translation[0], player_transform.single_mut().translation[2]);
+        let bonus_pos = Vec2::new(game.bonus.x, game.bonus.z);
+        if player_pos.distance(bonus_pos) < 1.0 {
+            commands.entity(entity).despawn_recursive();
+            game.bonus.entity = None;
+        }
+    }
 }
 
 fn move_enemy(
@@ -183,55 +212,7 @@ fn spawn_level(
         .insert(Collider::cuboid(ground_size/2.0, ground_height/2.0, ground_size/2.0))
         .insert(Transform::from_xyz(0.0, -ground_height, 0.0))
         .insert(GlobalTransform::default());
-    
-    // Spawn platform
-    commands
-        .spawn(PbrBundle {
-            mesh		: meshes.add(Mesh::from(render_shape::Box::new(5.0, 0.5, 5.0))),
-            material	: materials.add(Color::YELLOW.into()),
-            transform	: Transform::from_xyz(0.0, 1.0, 0.0),
-            ..default()
-        })
-        .insert(RigidBody::Fixed)
-        .insert(Collider::cuboid(5.0/2.0, 0.5/2.0, 5.0/2.0))
-        .insert(Restitution::coefficient(0.7))
-        .insert(TransformBundle::from(Transform::from_translation(Vec3::from([5.0, 3.0, 5.0]))));
-    
-    // Spawn cubes
-    let cube = render_shape::Cube::default();
-    let cubes_positions = [[2.0, 1.0, 2.0], [-2.0, 1.0, 2.0], [2.0, 1.0, -2.0], [-2.0, 1.0, -2.0]];
-    for pos in cubes_positions {
-        let vec_pos = Vec3::from(pos);
-        commands
-            .spawn(PbrBundle {
-                mesh		: meshes.add(Mesh::from(cube)),
-                material	: materials.add(Color::CRIMSON.into()),
-                transform	: Transform::from_xyz(0.0, 1.0, 0.0),
-                ..default()
-            })
-            .insert(RigidBody::Dynamic)
-            .insert(Collider::cuboid(0.5, 0.5, 0.5))
-            .insert(Restitution::coefficient(0.7))
-            .insert(TransformBundle::from(Transform::from_translation(vec_pos)));
-    }
-
-    // Spawn sphere
-    let sphere = render_shape::Capsule {
-        depth: 0.0,
-        ..default()
-    };
-    commands
-        .spawn(PbrBundle {
-            mesh		: meshes.add(Mesh::from(sphere)),
-            material	: materials.add(Color::GOLD.into()),
-            transform	: Transform::from_xyz(0.0, 1.0, 0.0),
-            ..default()
-        })
-        .insert(RigidBody::Dynamic)
-        .insert(Collider::ball(0.5))
-        .insert(Restitution::coefficient(0.7))
-        .insert(TransformBundle::from(Transform::from_xyz(1.0, 0.0, 1.0)));
-    
+        
     // Spawn alien
     commands
         .spawn(Enemy)
@@ -285,6 +266,62 @@ fn spawn_player(
         .insert(Restitution::coefficient(0.7));
 }
 
+// despawn the bonus if there is one, then spawn a new one at a random location
+fn spawn_bonus(
+    time: Res<Time>,
+    mut timer: ResMut<BonusSpawnTimer>,
+    // mut state: ResMut<State<GameState>>,
+    mut commands: Commands,
+    mut game: ResMut<Game>,
+    mut player_transform: Query<&mut Transform, With<Player>>
+) {
+    // Make sure we wait enough time before spawning the next bonus
+    if !timer.0.tick(time.delta()).finished() {
+        return;
+    }
+
+    if let Some(entity) = game.bonus.entity {
+        commands.entity(entity).despawn_recursive();
+        game.bonus.entity = None;
+    }
+
+    // Ensure bonus doesn't spawn on the player
+    loop {
+        game.bonus.x = rand::thread_rng().gen_range(-7.0..7.0);
+        game.bonus.z = rand::thread_rng().gen_range(-7.0..7.0);
+        let player_pos = Vec2::new(player_transform.single_mut().translation[0], player_transform.single_mut().translation[2]);
+        let bonus_pos = Vec2::new(game.bonus.x, game.bonus.z);
+        if player_pos.distance(bonus_pos) > 2.0 {
+            break;
+        }
+    }
+    game.bonus.entity = Some(
+        commands
+            .spawn(SceneBundle {
+                transform: Transform {
+                    translation: Vec3::new(game.bonus.x, 0.5, game.bonus.z),
+                    scale:  Vec3::new(2.0, 2.0, 2.0),
+                    ..default()
+                },
+                scene: game.bonus.handle.clone(),
+                ..default()
+            })
+            .with_children(|children| {
+                children.spawn(PointLightBundle {
+                    point_light: PointLight {
+                        color: Color::rgb(1.0, 1.0, 0.0),
+                        intensity: 1000.0,
+                        range: 10.0,
+                        ..default()
+                    },
+                    transform: Transform::from_xyz(0.0, 2.0, 0.0),
+                    ..default()
+                });
+            })
+            .id(),
+    );
+}
+
 fn setup_physics(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -295,8 +332,18 @@ fn setup_physics(
     spawn_player(&asset_server, &mut commands);
 }
 
+fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>) {
+    // load the scene for the pumpkin
+    game.bonus.handle = asset_server.load("models/AlienCake/pumpkin.glb#Scene0");
+}
+
 fn main() {
     App::new()
+        .init_resource::<Game>()
+        .insert_resource(BonusSpawnTimer(Timer::from_seconds(
+            5.0,
+            TimerMode::Repeating,
+        )))
         .add_plugins(DefaultPlugins)
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
         // .add_plugin(RapierDebugRenderPlugin::default())
@@ -304,11 +351,13 @@ fn main() {
         .add_startup_system(setup_camera)
         .add_startup_system(setup_light)
         .add_startup_system(setup_physics)
+        .add_system_set(SystemSet::on_enter(GameState::Playing).with_system(setup))
         .add_system_set(
             SystemSet::on_update(GameState::Playing)
                 .with_system(move_player)
                 .with_system(move_camera)
                 .with_system(move_enemy)
+                .with_system(spawn_bonus)
         )
         .run();
 }
