@@ -1,6 +1,8 @@
 /*
 TODO:
-- Add items that player can collect
+- Make player attack enemy
+  - Subtract HP of enemy
+  - When enemy has 0 HP, despawn it
 
 - Spawn creatures that interact with character, chase him, hurt him, etc.
 - Add levels with different layout, platforms etc. 
@@ -8,6 +10,8 @@ TODO:
 - Refine player movement
 
 DONE:
+- Prevent double-jump
+- Add items that player can collect
 - Rotate enemy to direction it's moving
 - Make enemy move towards player
 - Rotate character to direction it's moving
@@ -38,6 +42,9 @@ struct Camera;
 #[derive(Component)]
 struct Enemy;
 
+#[derive(Component)]
+struct Health(u32);
+
 #[derive(Default)]
 struct Bonus {
     entity: Option<Entity>,
@@ -49,17 +56,11 @@ struct Bonus {
 #[derive(Resource, Default)]
 struct Game {
     bonus: Bonus,
+    player: Option<Entity>,
 }
 
 #[derive(Resource)]
 struct BonusSpawnTimer(Timer);
-
-// Should I work with entity IDs for these entities?
-// #[derive(Default)]
-// struct Game {
-//     player: Option<Entity>,
-//     camera: Option<Entity>
-// }
 
 const DEFAULT_PLAYER_POS: [f32; 3] = [ 0.0, 1.0, 0.0];
 const DEFAULT_CAMERA_POS: [f32; 3] = [-7.0, 10.0, 0.0];
@@ -83,6 +84,7 @@ fn move_player(
     mut player_transform: Query<&mut Transform, With<Player>>,
     mut game: ResMut<Game>,
     mut commands: Commands,
+    rapier_context: Res<RapierContext>
 ) {
     const SPEED: f32 = 7.0;
     let mut vel = velocities.single_mut();
@@ -108,7 +110,22 @@ fn move_player(
     }
     
     if keyboard_input.just_pressed(KeyCode::Space) {
-        vel.linvel[1] = 5.0;
+        // Prevent double-jump using raycast
+        let ray_pos = player_transform.single_mut().translation;
+        let ray_dir = Vec3::new(0.0, -1.0, 0.0);
+        let max_toi = 1.0;
+        let solid = true;
+        let filter = QueryFilter {
+            exclude_collider: game.player,
+            ..default()
+        };
+    
+        if let Some((_entity, _toi)) = rapier_context.cast_ray(
+            ray_pos, ray_dir, max_toi, solid, filter
+        ) {
+            vel.linvel[1] = 6.0;
+        }
+    
     }
 
     // Custom gravity
@@ -125,29 +142,54 @@ fn move_player(
     }
 }
 
+fn attack_enemy(
+    keyboard_input: Res<Input<KeyCode>>,
+    mut enemies: Query<(Entity, &mut Transform, &mut Health), (With<Enemy>, Without<Player>)>,
+    mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>)>,
+    // mut enemy_health: Query<&mut Health, With<Enemy>>,
+    mut commands: Commands,
+) {
+    if keyboard_input.just_pressed(KeyCode::X) {
+        let vec2_player = Vec2::new(player_transform.single_mut().translation[0], player_transform.single_mut().translation[2]);
+        for (enemy_entity, enemy_transform, mut enemy_health) in enemies.iter_mut() {
+            let vec2_enemy = Vec2::new(enemy_transform.translation[0], enemy_transform.translation[2]);
+
+            if vec2_player.distance(vec2_enemy) < 1.5 {
+                println!("Enemy was hit");
+                enemy_health.0 -= 1;
+                println!("{}", enemy_health.0);
+                if enemy_health.0 == 0 {
+                    commands.entity(enemy_entity).despawn_recursive();
+                }
+            }
+        }
+    }
+}
+
 fn move_enemy(
-    mut velocities: Query<&mut Velocity, With<Enemy>>,
-    mut enemy_transform: Query<&mut Transform, (With<Enemy>, Without<Player>)>,
+    // mut velocities: Query<&mut Velocity, With<Enemy>>,
+    mut enemies: Query<(&mut Transform, &mut Velocity), (With<Enemy>, Without<Player>)>,
     mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>)>
 ) {
     const SPEED: f32 = 6.0;
-    let mut vel = velocities.single_mut();
+    for (mut enemy_transform, mut enemy_velocity) in enemies.iter_mut() {
+        // Get vector representing direction from enemy to player
+        let mut direction_vec = player_transform.single_mut().translation - enemy_transform.translation;
+        direction_vec = direction_vec.normalize();
 
-    // Get vector representing direction from enemy to player
-    let mut direction_vec = player_transform.single_mut().translation - enemy_transform.single_mut().translation;
-    direction_vec = direction_vec.normalize();
+        // Calculate distance of vectors, so enemy chases player only until it's near him
+        let vec2_player = Vec2::new(player_transform.single_mut().translation[0], player_transform.single_mut().translation[2]);
+        let vec2_enemy = Vec2::new(enemy_transform.translation[0], enemy_transform.translation[2]);
+        if vec2_player.distance(vec2_enemy) > 1.4 {
+            enemy_velocity.linvel[0] = direction_vec[0] * SPEED;
+            enemy_velocity.linvel[2] = direction_vec[2] * SPEED;
+        }
 
-    // Calculate distance of vectors, so enemy chases player only until it's near him
-    let vec2_player = Vec2::new(player_transform.single_mut().translation[0], player_transform.single_mut().translation[2]);
-    let vec2_enemy = Vec2::new(enemy_transform.single_mut().translation[0], enemy_transform.single_mut().translation[2]);
-    if vec2_player.distance(vec2_enemy) > 1.4 {
-        vel.linvel[0] = direction_vec[0] * SPEED;
-        vel.linvel[2] = direction_vec[2] * SPEED;
-    }
+        // Rotate ememy in direction it's moving
+        let dir_angle = (direction_vec.x).atan2(direction_vec.z);
+        enemy_transform.rotation = Quat::from_rotation_y(dir_angle);   
 
-    // Rotate ememy in direction it's moving
-    let dir_angle = (direction_vec.x).atan2(direction_vec.z);
-    enemy_transform.single_mut().rotation = Quat::from_rotation_y(dir_angle);
+    } 
 }
 
 fn setup_camera(mut commands: Commands) {
@@ -216,6 +258,7 @@ fn spawn_level(
     // Spawn alien
     commands
         .spawn(Enemy)
+        .insert(Health(3))
         .insert(PbrBundle {
             transform: Transform::from_xyz(-5.0, 1.0, -5.0),
             ..default()
@@ -240,30 +283,34 @@ fn spawn_level(
 fn spawn_player(
     asset_server: &Res<AssetServer>,
     commands: &mut Commands,
+    mut game: ResMut<Game>,
 ) {
-    commands
-        .spawn(Player)
-        .insert	(PbrBundle {
-			transform: Transform::from_xyz(0.0, 1.0, 0.0),
-			..default()
-		})
-        .with_children(|cell| {
-            cell.spawn(SceneBundle {
-                scene: asset_server.load("models/AlienCake/characterDigger.glb#Scene0"), 
-                transform: Transform {
-                    translation: Vec3::new(0.0, -1.0, 0.0),
-                    rotation: Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
-                    scale:  Vec3::new(2.0, 2.0, 2.0),
-                },
-                ..default()});
-        })
-        .insert(RigidBody::Dynamic)
-        .insert(Velocity::zero())
-        .insert(LockedAxes::ROTATION_LOCKED)
-        // .insert(GravityScale(0.0)) // May be needed when tweaking movement for RigidBody::Dynamic
-        // .insert(Collider::ball(0.5))
-        .insert(Collider::capsule_y(0.5, 0.5))
-        .insert(Restitution::coefficient(0.7));
+    game.player = Some(
+        commands
+            .spawn(Player)
+            .insert	(PbrBundle {
+                transform: Transform::from_xyz(0.0, 1.0, 0.0),
+                ..default()
+            })
+            .with_children(|cell| {
+                cell.spawn(SceneBundle {
+                    scene: asset_server.load("models/AlienCake/characterDigger.glb#Scene0"), 
+                    transform: Transform {
+                        translation: Vec3::new(0.0, -1.0, 0.0),
+                        rotation: Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
+                        scale:  Vec3::new(2.0, 2.0, 2.0),
+                    },
+                    ..default()});
+            })
+            .insert(RigidBody::Dynamic)
+            .insert(Velocity::zero())
+            .insert(LockedAxes::ROTATION_LOCKED)
+            // .insert(GravityScale(0.0)) // May be needed when tweaking movement for RigidBody::Dynamic
+            // .insert(Collider::ball(0.5))
+            .insert(Collider::capsule_y(0.5, 0.5))
+            .insert(Restitution::coefficient(0.7))
+            .id()
+    )
 }
 
 // despawn the bonus if there is one, then spawn a new one at a random location
@@ -326,14 +373,15 @@ fn setup_physics(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>,
-    mut commands: Commands
+    mut commands: Commands,
+    game: ResMut<Game>,
 ) {
     spawn_level(&asset_server, &mut meshes, &mut materials, &mut commands);
-    spawn_player(&asset_server, &mut commands);
+    spawn_player(&asset_server, &mut commands, game);
 }
 
 fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>) {
-    // load the scene for the pumpkin
+    // load the scene for the bonus
     game.bonus.handle = asset_server.load("models/AlienCake/pumpkin.glb#Scene0");
 }
 
@@ -358,6 +406,7 @@ fn main() {
                 .with_system(move_camera)
                 .with_system(move_enemy)
                 .with_system(spawn_bonus)
+                .with_system(attack_enemy)
         )
         .run();
 }
