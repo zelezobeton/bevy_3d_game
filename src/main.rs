@@ -1,9 +1,11 @@
 /*
 TODO:
+- Make enemy attack player
 - Make player attack enemy
   - Subtract HP of enemy
   - When enemy has 0 HP, despawn it
 
+LONGTERM:
 - Spawn creatures that interact with character, chase him, hurt him, etc.
 - Add levels with different layout, platforms etc. 
 - Add movement around Y-axis with mouse
@@ -39,11 +41,16 @@ struct Player;
 #[derive(Component)]
 struct Camera;
 
-#[derive(Component)]
-struct Enemy;
+enum EnemyState {
+    Chasing,
+    Cooldown
+}
 
 #[derive(Component)]
-struct Health(u32);
+struct Enemy(EnemyState);
+
+#[derive(Component)]
+struct Health(i32);
 
 #[derive(Default)]
 struct Bonus {
@@ -61,6 +68,9 @@ struct Game {
 
 #[derive(Resource)]
 struct BonusSpawnTimer(Timer);
+
+#[derive(Resource)]
+struct EnemyAttackTimer(Timer);
 
 const DEFAULT_PLAYER_POS: [f32; 3] = [ 0.0, 1.0, 0.0];
 const DEFAULT_CAMERA_POS: [f32; 3] = [-7.0, 10.0, 0.0];
@@ -82,6 +92,7 @@ fn move_player(
     keyboard_input: Res<Input<KeyCode>>,
     mut velocities: Query<&mut Velocity, With<Player>>,
     mut player_transform: Query<&mut Transform, With<Player>>,
+    mut player_health: Query<&mut Health, With<Player>>,
     mut game: ResMut<Game>,
     mut commands: Commands,
     rapier_context: Res<RapierContext>
@@ -138,6 +149,9 @@ fn move_player(
         if player_pos.distance(bonus_pos) < 1.0 {
             commands.entity(entity).despawn_recursive();
             game.bonus.entity = None;
+
+            // Add player health
+            player_health.single_mut().0 += 1;
         }
     }
 }
@@ -146,7 +160,6 @@ fn attack_enemy(
     keyboard_input: Res<Input<KeyCode>>,
     mut enemies: Query<(Entity, &mut Transform, &mut Health), (With<Enemy>, Without<Player>)>,
     mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>)>,
-    // mut enemy_health: Query<&mut Health, With<Enemy>>,
     mut commands: Commands,
 ) {
     if keyboard_input.just_pressed(KeyCode::X) {
@@ -166,8 +179,36 @@ fn attack_enemy(
     }
 }
 
+fn attack_player(
+    time: Res<Time>,
+    mut timer: ResMut<EnemyAttackTimer>,
+    mut enemies: Query<(&mut Transform, &mut Enemy), (With<Enemy>, Without<Player>)>,
+    mut player: Query<(&mut Transform, &mut Health), (With<Player>, Without<Enemy>)>,
+) {    
+    let vec2_player = Vec2::new(player.single_mut().0.translation[0], player.single_mut().0.translation[2]);
+    for (enemy_transform, mut enemy_state) in enemies.iter_mut() {
+        let vec2_enemy = Vec2::new(enemy_transform.translation[0], enemy_transform.translation[2]);
+        
+        if vec2_player.distance(vec2_enemy) < 1.5 {
+            match enemy_state.0 {
+                EnemyState::Chasing => {
+                    // Attack player
+                    player.single_mut().1.0 -= 1;
+                    enemy_state.0 = EnemyState::Cooldown;
+                },
+                _ => {
+                    // Enemy attack cooldown
+                    if !timer.0.tick(time.delta()).finished() {
+                        return;
+                    }
+                    enemy_state.0 = EnemyState::Chasing;
+                }
+            }
+        }
+    }
+}
+
 fn move_enemy(
-    // mut velocities: Query<&mut Velocity, With<Enemy>>,
     mut enemies: Query<(&mut Transform, &mut Velocity), (With<Enemy>, Without<Player>)>,
     mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>)>
 ) {
@@ -188,7 +229,6 @@ fn move_enemy(
         // Rotate ememy in direction it's moving
         let dir_angle = (direction_vec.x).atan2(direction_vec.z);
         enemy_transform.rotation = Quat::from_rotation_y(dir_angle);   
-
     } 
 }
 
@@ -257,7 +297,7 @@ fn spawn_level(
         
     // Spawn alien
     commands
-        .spawn(Enemy)
+        .spawn(Enemy(EnemyState::Chasing))
         .insert(Health(3))
         .insert(PbrBundle {
             transform: Transform::from_xyz(-5.0, 1.0, -5.0),
@@ -288,6 +328,7 @@ fn spawn_player(
     game.player = Some(
         commands
             .spawn(Player)
+            .insert(Health(5))
             .insert	(PbrBundle {
                 transform: Transform::from_xyz(0.0, 1.0, 0.0),
                 ..default()
@@ -380,9 +421,41 @@ fn setup_physics(
     spawn_player(&asset_server, &mut commands, game);
 }
 
-fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>) {
+fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>, mut commands: Commands) {
     // load the scene for the bonus
     game.bonus.handle = asset_server.load("models/AlienCake/pumpkin.glb#Scene0");
+
+    // scoreboard
+    commands.spawn(
+        TextBundle::from_section(
+            "Score:",
+            TextStyle {
+                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                font_size: 40.0,
+                color: Color::rgb(0.5, 0.5, 1.0),
+            },
+        )
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            position: UiRect {
+                top: Val::Px(5.0),
+                left: Val::Px(5.0),
+                ..default()
+            },
+            ..default()
+        }),
+    );
+}
+
+// update the health displayed during the game
+fn show_health(
+    // game: Res<Game>,
+    mut text_query: Query<&mut Text>,
+    mut health_query: Query<&mut Health, With<Player>>
+) {
+    let mut text = text_query.single_mut();
+    let health = health_query.single_mut();
+    text.sections[0].value = format!("Health: {}", health.0);
 }
 
 fn main() {
@@ -390,6 +463,10 @@ fn main() {
         .init_resource::<Game>()
         .insert_resource(BonusSpawnTimer(Timer::from_seconds(
             5.0,
+            TimerMode::Repeating,
+        )))
+        .insert_resource(EnemyAttackTimer(Timer::from_seconds(
+            2.0,
             TimerMode::Repeating,
         )))
         .add_plugins(DefaultPlugins)
@@ -407,6 +484,9 @@ fn main() {
                 .with_system(move_enemy)
                 .with_system(spawn_bonus)
                 .with_system(attack_enemy)
+                .with_system(show_health)
+                .with_system(attack_player)
         )
+        .add_system(bevy::window::close_on_esc)
         .run();
 }
