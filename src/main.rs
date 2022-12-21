@@ -1,5 +1,7 @@
 /*
 TODO:
+- Add movement around Y-axis with mouse
+
 - Make enemy attack player
 - Make player attack enemy
   - Subtract HP of enemy
@@ -8,7 +10,6 @@ TODO:
 LONGTERM:
 - Spawn creatures that interact with character, chase him, hurt him, etc.
 - Add levels with different layout, platforms etc. 
-- Add movement around Y-axis with mouse
 - Refine player movement
 
 DONE:
@@ -90,7 +91,7 @@ fn move_camera(
 
 fn move_player(
     keyboard_input: Res<Input<KeyCode>>,
-    mut velocities: Query<&mut Velocity, With<Player>>,
+    mut player_velocities: Query<&mut Velocity, With<Player>>,
     mut player_transform: Query<&mut Transform, With<Player>>,
     mut player_health: Query<&mut Health, With<Player>>,
     mut game: ResMut<Game>,
@@ -98,23 +99,34 @@ fn move_player(
     rapier_context: Res<RapierContext>
 ) {
     const SPEED: f32 = 7.0;
-    let mut vel = velocities.single_mut();
+    let mut vel = player_velocities.single_mut();
+    let mut transform = player_transform.single_mut();
+
+    let mut x = 0.0;
+    let mut z = 0.0;
     if keyboard_input.pressed(KeyCode::Up) {
-        vel.linvel[0] = SPEED;
-        player_transform.single_mut().rotation = Quat::from_rotation_y(0.0);
+        x = 1.0;
+        transform.rotation = Quat::from_rotation_y(0.0);
     }
     else if keyboard_input.pressed(KeyCode::Down) {
-        vel.linvel[0] = -SPEED;
-        player_transform.single_mut().rotation = Quat::from_rotation_y(PI);
+        x = -1.0;
+        transform.rotation = Quat::from_rotation_y(PI);
     }
-    else if keyboard_input.pressed(KeyCode::Left) {
-        vel.linvel[2] = -SPEED;
-        player_transform.single_mut().rotation = Quat::from_rotation_y(FRAC_PI_2);
+    
+    if keyboard_input.pressed(KeyCode::Left) {
+        z = -1.0;
+        transform.rotation = Quat::from_rotation_y(FRAC_PI_2);
     }
     else if keyboard_input.pressed(KeyCode::Right) {
-        vel.linvel[2] = SPEED;
-        player_transform.single_mut().rotation = Quat::from_rotation_y(-FRAC_PI_2);
+        z = 1.0;
+        transform.rotation = Quat::from_rotation_y(-FRAC_PI_2);
     }
+    
+    if x != 0.0 || z != 0.0 {
+        let v2_norm = Vec2::new(x,z).normalize();
+        vel.linvel[0] = v2_norm.x * SPEED;
+        vel.linvel[2] = v2_norm.y * SPEED;
+    } 
     else {
         vel.linvel[0] = 0.0;
         vel.linvel[2] = 0.0;
@@ -122,7 +134,7 @@ fn move_player(
     
     if keyboard_input.just_pressed(KeyCode::Space) {
         // Prevent double-jump using raycast
-        let ray_pos = player_transform.single_mut().translation;
+        let ray_pos = transform.translation;
         let ray_dir = Vec3::new(0.0, -1.0, 0.0);
         let max_toi = 1.0;
         let solid = true;
@@ -144,7 +156,7 @@ fn move_player(
     
     // Get bonus
     if let Some(entity) = game.bonus.entity {
-        let player_pos = Vec2::new(player_transform.single_mut().translation[0], player_transform.single_mut().translation[2]);
+        let player_pos = Vec2::new(transform.translation[0], transform.translation[2]);
         let bonus_pos = Vec2::new(game.bonus.x, game.bonus.z);
         if player_pos.distance(bonus_pos) < 1.0 {
             commands.entity(entity).despawn_recursive();
