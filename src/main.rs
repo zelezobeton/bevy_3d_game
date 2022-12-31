@@ -1,18 +1,20 @@
 /*
 TODO:
-- Add movement around Y-axis with mouse
+- Make custom character in Blender and animate player attacking 
 
 - Make enemy attack player
-- Make player attack enemy
+  - Make player attack enemy
   - Subtract HP of enemy
-  - When enemy has 0 HP, despawn it
+- When enemy has 0 HP, despawn it
 
 LONGTERM:
 - Spawn creatures that interact with character, chase him, hurt him, etc.
+- Add movement around Y-axis with mouse
 - Add levels with different layout, platforms etc. 
 - Refine player movement
 
 DONE:
+- Rotate player using mouse
 - Prevent double-jump
 - Add items that player can collect
 - Rotate enemy to direction it's moving
@@ -40,7 +42,10 @@ enum GameState {
 struct Player;
 
 #[derive(Component)]
-struct Camera;
+struct MainCamera;
+
+#[derive(Component)]
+struct Cursor;
 
 enum EnemyState {
     Chasing,
@@ -64,7 +69,7 @@ struct Bonus {
 #[derive(Resource, Default)]
 struct Game {
     bonus: Bonus,
-    player: Option<Entity>,
+    player: Option<Entity>
 }
 
 #[derive(Resource)]
@@ -77,8 +82,8 @@ const DEFAULT_PLAYER_POS: [f32; 3] = [ 0.0, 1.0, 0.0];
 const DEFAULT_CAMERA_POS: [f32; 3] = [-7.0, 10.0, 0.0];
 
 fn move_camera(
-    mut camera_transform: Query<&mut Transform, (With<Camera>, Without<Player>)>,
-    mut player_transform: Query<&mut Transform, (With<Player>, Without<Camera>)>
+    mut camera_transform: Query<&mut Transform, (With<MainCamera>, Without<Player>)>,
+    mut player_transform: Query<&mut Transform, (With<Player>, Without<MainCamera>)>
 ) {
     let player_pos = player_transform.single_mut().translation;
 
@@ -89,6 +94,36 @@ fn move_camera(
     camera_transform.single_mut().translation = camera_transform.single_mut().translation.lerp(new_camera_pos, 0.2);
 }
 
+fn move_cursor(
+    rapier_context: Res<RapierContext>,
+    windows: ResMut<Windows>,
+    q_camera: Query<(&Camera, &GlobalTransform), (With<MainCamera>, Without<Player>)>,
+    mut cursor_transform: Query<&mut Transform, With<Cursor>>
+) {
+    let (camera, camera_transform) = q_camera.single();
+    if let Some(screen_pos) = windows.primary().cursor_position() {
+        let world_ray = camera
+            .viewport_to_world(camera_transform, screen_pos)
+            .unwrap();
+        // println!("{:?}", world_ray);
+
+        let ray_pos = world_ray.origin;
+        let ray_dir = world_ray.direction;
+        let max_toi = 100.0;
+        let solid = true;
+        let filter = QueryFilter {
+            ..default()
+        };
+        if let Some((_entity, intersection)) = rapier_context.cast_ray_and_get_normal(
+            ray_pos, ray_dir, max_toi, solid, filter
+        ) {
+            let hit_point = intersection.point;
+            // println!("Entity {:?} hit at point {} with normal {}", entity, hit_point, hit_normal);
+            cursor_transform.single_mut().translation = hit_point;
+        }
+    }
+}
+
 fn move_player(
     keyboard_input: Res<Input<KeyCode>>,
     mut player_velocities: Query<&mut Velocity, With<Player>>,
@@ -96,40 +131,43 @@ fn move_player(
     mut player_health: Query<&mut Health, With<Player>>,
     mut game: ResMut<Game>,
     mut commands: Commands,
-    rapier_context: Res<RapierContext>
+    rapier_context: Res<RapierContext>,
+    cursor_transform: Query<&mut Transform, (With<Cursor>, Without<Player>)>
 ) {
     const SPEED: f32 = 7.0;
     let mut vel = player_velocities.single_mut();
     let mut transform = player_transform.single_mut();
 
+    // Rotate character using cursor
+    let x_pos = cursor_transform.single().translation.x - transform.translation.x;
+    let z_pos = cursor_transform.single().translation.z - transform.translation.z;
+    let angle = (x_pos).atan2(z_pos) - FRAC_PI_2;
+    transform.rotation = Quat::from_rotation_y(angle);
+
     let mut x = 0.0;
     let mut z = 0.0;
-    if keyboard_input.pressed(KeyCode::Up) {
+    if keyboard_input.any_pressed([KeyCode::Up, KeyCode::W]) {
         x = 1.0;
-        transform.rotation = Quat::from_rotation_y(0.0);
     }
-    else if keyboard_input.pressed(KeyCode::Down) {
+    else if keyboard_input.any_pressed([KeyCode::Down, KeyCode::S]) {
         x = -1.0;
-        transform.rotation = Quat::from_rotation_y(PI);
     }
     
-    if keyboard_input.pressed(KeyCode::Left) {
+    if keyboard_input.any_pressed([KeyCode::Left, KeyCode::A]) {
         z = -1.0;
-        transform.rotation = Quat::from_rotation_y(FRAC_PI_2);
     }
-    else if keyboard_input.pressed(KeyCode::Right) {
+    else if keyboard_input.any_pressed([KeyCode::Right, KeyCode::D]) {
         z = 1.0;
-        transform.rotation = Quat::from_rotation_y(-FRAC_PI_2);
     }
     
-    if x != 0.0 || z != 0.0 {
+    if x == 0.0 && z == 0.0 {
+        vel.linvel[0] = 0.0;
+        vel.linvel[2] = 0.0;
+    } 
+    else {
         let v2_norm = Vec2::new(x,z).normalize();
         vel.linvel[0] = v2_norm.x * SPEED;
         vel.linvel[2] = v2_norm.y * SPEED;
-    } 
-    else {
-        vel.linvel[0] = 0.0;
-        vel.linvel[2] = 0.0;
     }
     
     if keyboard_input.just_pressed(KeyCode::Space) {
@@ -251,7 +289,7 @@ fn setup_camera(mut commands: Commands) {
                 .looking_at(Vec3::from(DEFAULT_PLAYER_POS), Vec3::Y), // focus rotation of camera on player
             ..default()
         })
-        .insert(Camera);
+        .insert(MainCamera);
 }
 
 fn setup_light(mut commands: Commands) {
@@ -370,7 +408,6 @@ fn spawn_player(
 fn spawn_bonus(
     time: Res<Time>,
     mut timer: ResMut<BonusSpawnTimer>,
-    // mut state: ResMut<State<GameState>>,
     mut commands: Commands,
     mut game: ResMut<Game>,
     mut player_transform: Query<&mut Transform, With<Player>>
@@ -433,7 +470,11 @@ fn setup_physics(
     spawn_player(&asset_server, &mut commands, game);
 }
 
-fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>, mut commands: Commands) {
+fn setup(
+    asset_server: Res<AssetServer>, 
+    mut game: ResMut<Game>, 
+    mut commands: Commands, 
+) {
     // load the scene for the bonus
     game.bonus.handle = asset_server.load("models/AlienCake/pumpkin.glb#Scene0");
 
@@ -457,11 +498,23 @@ fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>, mut commands: C
             ..default()
         }),
     );
+
+    // Setup cursor
+    commands
+        .spawn(SceneBundle {
+            transform: Transform {
+                translation: Vec3::ZERO,
+                scale:  Vec3::new(2.0, 2.0, 2.0),
+                ..default()
+            },
+            // scene: game.bonus.handle.clone(),
+            ..default()
+        })
+        .insert(Cursor);
 }
 
-// update the health displayed during the game
+// Update the health displayed during the game
 fn show_health(
-    // game: Res<Game>,
     mut text_query: Query<&mut Text>,
     mut health_query: Query<&mut Health, With<Player>>
 ) {
@@ -492,6 +545,7 @@ fn main() {
         .add_system_set(
             SystemSet::on_update(GameState::Playing)
                 .with_system(move_player)
+                .with_system(move_cursor)
                 .with_system(move_camera)
                 .with_system(move_enemy)
                 .with_system(spawn_bonus)
