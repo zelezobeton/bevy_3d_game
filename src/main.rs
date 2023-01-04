@@ -1,5 +1,7 @@
 /*
 TODO:
+- Add different type of enemy, that stands still and shoots bullets
+
 - Make custom character in Blender and animate player attacking 
 
 - Make enemy attack player
@@ -14,6 +16,7 @@ LONGTERM:
 - Refine player movement
 
 DONE:
+- Make character shoot bullets
 - Rotate player using mouse
 - Prevent double-jump
 - Add items that player can collect
@@ -46,6 +49,9 @@ struct MainCamera;
 
 #[derive(Component)]
 struct Cursor;
+
+#[derive(Component)]
+struct Bullet(Vec3);
 
 enum EnemyState {
     Chasing,
@@ -206,13 +212,17 @@ fn move_player(
     }
 }
 
-fn attack_enemy(
+fn player_attack(
     keyboard_input: Res<Input<KeyCode>>,
-    mut enemies: Query<(Entity, &mut Transform, &mut Health), (With<Enemy>, Without<Player>)>,
-    mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>)>,
+    mouse: Res<Input<MouseButton>>,
+    mut enemies: Query<(Entity, &mut Transform, &mut Health), (With<Enemy>, Without<Player>, Without<Cursor>)>,
+    mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>, Without<Cursor>)>,
+    mut cursor_transform: Query<&mut Transform, (With<Cursor>, Without<Player>, Without<Enemy>)>,
     mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    if keyboard_input.just_pressed(KeyCode::X) {
+    if mouse.just_pressed(MouseButton::Right) {
         let vec2_player = Vec2::new(player_transform.single_mut().translation[0], player_transform.single_mut().translation[2]);
         for (enemy_entity, enemy_transform, mut enemy_health) in enemies.iter_mut() {
             let vec2_enemy = Vec2::new(enemy_transform.translation[0], enemy_transform.translation[2]);
@@ -227,9 +237,74 @@ fn attack_enemy(
             }
         }
     }
+
+    if mouse.just_pressed(MouseButton::Left) {
+        let direction = (
+            cursor_transform.single_mut().translation - player_transform.single_mut().translation 
+        ).normalize();
+        
+        let sphere = render_shape::Capsule {
+            depth: 0.0,
+            radius: 0.1,
+            ..default()
+        };
+        commands
+            .spawn(PbrBundle {
+                mesh		: meshes.add(Mesh::from(sphere)),
+                material	: materials.add(Color::GOLD.into()),
+                transform	: Transform::from_translation(player_transform.single_mut().translation),
+                ..default()
+            })
+            .insert(Bullet(direction))
+            .insert(RigidBody::Dynamic)
+            .insert(Velocity::zero())
+            // .insert(Collider::ball(0.1))
+            .insert(Restitution::coefficient(0.7));
+    }
 }
 
-fn attack_player(
+fn move_bullets(
+    mut bullet_velocities: Query<(Entity, &mut Velocity, &mut Bullet, &mut Transform), With<Bullet>>,
+    mut enemies: Query<(Entity, &mut Health), With<Enemy>>,
+    rapier_context: Res<RapierContext>,
+    mut commands: Commands,
+    mut game: ResMut<Game>,
+) {
+    const SPEED: f32 = 10.0;
+    for (bullet_entity, mut vel, direction, transform) in bullet_velocities.iter_mut() {
+        vel.linvel[0] = direction.0.x * SPEED;
+        vel.linvel[2] = direction.0.z * SPEED;
+
+        let shape = Collider::ball(0.1);
+        let shape_pos = transform.translation;
+        let shape_rot = transform.rotation;
+        let shape_vel = vel.linvel;
+        let max_toi = 0.0;
+        let filter = QueryFilter {
+            exclude_collider: game.player,
+            ..default()
+        };
+        
+        if let Some((entity, _hit)) = rapier_context.cast_shape(
+            shape_pos, shape_rot, shape_vel, &shape, max_toi, filter
+        ) {
+            // Despawn bullet after it hits anything
+            commands.entity(bullet_entity).despawn_recursive();
+
+            for (enemy_entity, mut enemy_health) in enemies.iter_mut() {
+                if entity == enemy_entity {
+                    enemy_health.0 -= 1;
+                    if enemy_health.0 == 0 {
+                        commands.entity(enemy_entity).despawn_recursive();
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+fn enemy_attack(
     time: Res<Time>,
     mut timer: ResMut<EnemyAttackTimer>,
     mut enemies: Query<(&mut Transform, &mut Enemy), (With<Enemy>, Without<Player>)>,
@@ -549,9 +624,10 @@ fn main() {
                 .with_system(move_camera)
                 .with_system(move_enemy)
                 .with_system(spawn_bonus)
-                .with_system(attack_enemy)
+                .with_system(player_attack)
                 .with_system(show_health)
-                .with_system(attack_player)
+                .with_system(enemy_attack)
+                .with_system(move_bullets)
         )
         .add_system(bevy::window::close_on_esc)
         .run();
