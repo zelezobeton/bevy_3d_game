@@ -16,6 +16,7 @@ LONGTERM:
 - Refine player movement
 
 DONE:
+- Added intersect_with_shape for getting collision for getting bonus and melee attack 
 - Make character shoot bullets
 - Rotate player using mouse
 - Prevent double-jump
@@ -52,6 +53,9 @@ struct Cursor;
 
 #[derive(Component)]
 struct Bullet(Vec3);
+
+#[derive(Component)]
+struct BonusComponent;
 
 enum EnemyState {
     Chasing,
@@ -134,13 +138,12 @@ fn move_player(
     keyboard_input: Res<Input<KeyCode>>,
     mut player_velocities: Query<&mut Velocity, With<Player>>,
     mut player_transform: Query<&mut Transform, With<Player>>,
-    mut player_health: Query<&mut Health, With<Player>>,
-    mut game: ResMut<Game>,
-    mut commands: Commands,
+    cursor_transform: Query<&mut Transform, (With<Cursor>, Without<Player>)>,
+    game: ResMut<Game>,
     rapier_context: Res<RapierContext>,
-    cursor_transform: Query<&mut Transform, (With<Cursor>, Without<Player>)>
+    time: Res<Time>
 ) {
-    const SPEED: f32 = 7.0;
+    const SPEED: f32 = 250.0;
     let mut vel = player_velocities.single_mut();
     let mut transform = player_transform.single_mut();
 
@@ -172,8 +175,8 @@ fn move_player(
     } 
     else {
         let v2_norm = Vec2::new(x,z).normalize();
-        vel.linvel[0] = v2_norm.x * SPEED;
-        vel.linvel[2] = v2_norm.y * SPEED;
+        vel.linvel[0] = v2_norm.x * SPEED * time.delta_seconds();
+        vel.linvel[2] = v2_norm.y * SPEED * time.delta_seconds();
     }
     
     if keyboard_input.just_pressed(KeyCode::Space) {
@@ -197,50 +200,74 @@ fn move_player(
 
     // Custom gravity
     // vel.linvel[1] -= 1.0;
-    
-    // Get bonus
-    if let Some(entity) = game.bonus.entity {
-        let player_pos = Vec2::new(transform.translation[0], transform.translation[2]);
-        let bonus_pos = Vec2::new(game.bonus.x, game.bonus.z);
-        if player_pos.distance(bonus_pos) < 1.0 {
-            commands.entity(entity).despawn_recursive();
-            game.bonus.entity = None;
+}
 
-            // Add player health
-            player_health.single_mut().0 += 1;
+fn get_bonus(
+    mut player: Query<(Entity, &mut Health), With<Player>>,
+    bonus: Query<(Entity, &mut Transform), With<BonusComponent>>,
+    mut game: ResMut<Game>,
+    rapier_context: Res<RapierContext>,
+    mut commands: Commands,
+) {
+    for (bonus_entity, bonus_transform) in bonus.iter() {
+        let shape = Collider::ball(0.5);
+        let shape_pos = bonus_transform.translation;
+        let shape_rot = bonus_transform.rotation;
+        let filter = QueryFilter::default();
+        
+        rapier_context.intersections_with_shape(
+            shape_pos, shape_rot, &shape, filter, |entity| {
+            if entity == player.single().0 {
+                commands.entity(bonus_entity).despawn_recursive();
+                game.bonus.entity = None;
+    
+                // Add player health
+                player.single_mut().1.0 += 1;
+            }
+            true
+        });
+    }
+}
+
+fn player_melee_attack(
+    mut enemies: Query<(Entity, &mut Health), (With<Enemy>, Without<Player>, Without<Cursor>)>,
+    mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>, Without<Cursor>)>,
+    rapier_context: Res<RapierContext>,
+    mut commands: Commands,
+    mouse: Res<Input<MouseButton>>,
+) {
+    if mouse.just_pressed(MouseButton::Right) {
+        for (enemy_entity, mut enemy_health) in enemies.iter_mut() {
+            let shape = Collider::ball(1.0);
+            let shape_pos = player_transform.single_mut().translation;
+            let shape_rot = player_transform.single_mut().rotation;
+            let filter = QueryFilter::default();
+            
+            rapier_context.intersections_with_shape(
+                shape_pos, shape_rot, &shape, filter, |entity| {
+                if entity == enemy_entity {
+                    enemy_health.0 -= 1;
+                    if enemy_health.0 == 0 {
+                        commands.entity(enemy_entity).despawn_recursive();
+                    }
+                }
+                true
+            });
         }
     }
 }
 
-fn player_attack(
-    keyboard_input: Res<Input<KeyCode>>,
-    mouse: Res<Input<MouseButton>>,
-    mut enemies: Query<(Entity, &mut Transform, &mut Health), (With<Enemy>, Without<Player>, Without<Cursor>)>,
-    mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>, Without<Cursor>)>,
-    mut cursor_transform: Query<&mut Transform, (With<Cursor>, Without<Player>, Without<Enemy>)>,
+fn player_shoot_attack(
+    mut player: Query<&mut Transform, (With<Player>, Without<Cursor>)>,
+    mut cursor_transform: Query<&mut Transform, (With<Cursor>, Without<Player>)>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mouse: Res<Input<MouseButton>>,
 ) {
-    if mouse.just_pressed(MouseButton::Right) {
-        let vec2_player = Vec2::new(player_transform.single_mut().translation[0], player_transform.single_mut().translation[2]);
-        for (enemy_entity, enemy_transform, mut enemy_health) in enemies.iter_mut() {
-            let vec2_enemy = Vec2::new(enemy_transform.translation[0], enemy_transform.translation[2]);
-
-            if vec2_player.distance(vec2_enemy) < 1.5 {
-                println!("Enemy was hit");
-                enemy_health.0 -= 1;
-                println!("{}", enemy_health.0);
-                if enemy_health.0 == 0 {
-                    commands.entity(enemy_entity).despawn_recursive();
-                }
-            }
-        }
-    }
-
     if mouse.just_pressed(MouseButton::Left) {
         let direction = (
-            cursor_transform.single_mut().translation - player_transform.single_mut().translation 
+            cursor_transform.single_mut().translation - player.single_mut().translation 
         ).normalize();
         
         let sphere = render_shape::Capsule {
@@ -252,7 +279,7 @@ fn player_attack(
             .spawn(PbrBundle {
                 mesh		: meshes.add(Mesh::from(sphere)),
                 material	: materials.add(Color::GOLD.into()),
-                transform	: Transform::from_translation(player_transform.single_mut().translation),
+                transform	: Transform::from_translation(player.single_mut().translation),
                 ..default()
             })
             .insert(Bullet(direction))
@@ -268,7 +295,7 @@ fn move_bullets(
     mut enemies: Query<(Entity, &mut Health), With<Enemy>>,
     rapier_context: Res<RapierContext>,
     mut commands: Commands,
-    mut game: ResMut<Game>,
+    game: ResMut<Game>,
 ) {
     const SPEED: f32 = 10.0;
     for (bullet_entity, mut vel, direction, transform) in bullet_velocities.iter_mut() {
@@ -302,7 +329,6 @@ fn move_bullets(
         }
     }
 }
-
 
 fn enemy_attack(
     time: Res<Time>,
@@ -443,6 +469,30 @@ fn spawn_level(
         .insert(LockedAxes::ROTATION_LOCKED)
         .insert(Collider::capsule_y(0.5, 0.5))
         .insert(Restitution::coefficient(0.7));
+
+    // Spawn skeleton
+    commands
+        .spawn(Enemy(EnemyState::Chasing))
+        .insert(Health(3))
+        .insert(PbrBundle {
+            transform: Transform::from_xyz(5.0, 1.0, -5.0),
+            ..default()
+        })
+        .with_children(|cell| {
+            cell.spawn(SceneBundle {
+                scene: asset_server.load("models/AlienCake/characterSkeleton.glb#Scene0"), 
+                transform: Transform {
+                    translation: Vec3::new(0.0, -1.0, 0.0),
+                    rotation: Quat::from_rotation_y(PI),
+                    scale:  Vec3::new(2.0, 2.0, 2.0),
+                },
+                ..default()});
+        })
+        .insert(RigidBody::Dynamic)
+        .insert(Velocity::zero())
+        .insert(LockedAxes::ROTATION_LOCKED)
+        .insert(Collider::capsule_y(0.5, 0.5))
+        .insert(Restitution::coefficient(0.7));
 }
 
 fn spawn_player(
@@ -530,6 +580,8 @@ fn spawn_bonus(
                     ..default()
                 });
             })
+            .insert(Velocity::zero())
+            .insert(BonusComponent)
             .id(),
     );
 }
@@ -548,7 +600,7 @@ fn setup_physics(
 fn setup(
     asset_server: Res<AssetServer>, 
     mut game: ResMut<Game>, 
-    mut commands: Commands, 
+    mut commands: Commands,
 ) {
     // load the scene for the bonus
     game.bonus.handle = asset_server.load("models/AlienCake/pumpkin.glb#Scene0");
@@ -624,10 +676,12 @@ fn main() {
                 .with_system(move_camera)
                 .with_system(move_enemy)
                 .with_system(spawn_bonus)
-                .with_system(player_attack)
+                .with_system(player_melee_attack)
+                .with_system(player_shoot_attack)
                 .with_system(show_health)
                 .with_system(enemy_attack)
                 .with_system(move_bullets)
+                .with_system(get_bonus)
         )
         .add_system(bevy::window::close_on_esc)
         .run();
