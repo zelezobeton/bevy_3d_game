@@ -127,7 +127,6 @@ fn move_player(
     // vel.linvel[1] -= 1.0;
 }
 
-
 fn player_melee_attack(
     mut enemies: Query<(Entity, &mut Health), (With<Enemy>, Without<Player>, Without<Cursor>)>,
     mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>, Without<Cursor>)>,
@@ -202,7 +201,7 @@ fn move_player_bullets(
     mut commands: Commands,
     game: ResMut<Game>,
 ) {
-    const SPEED: f32 = 10.0;
+    const SPEED: f32 = 15.0;
     for (bullet_entity, mut vel, direction, transform) in bullets.iter_mut() {
         vel.linvel[0] = direction.0.x * SPEED;
         vel.linvel[2] = direction.0.z * SPEED;

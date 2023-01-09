@@ -1,13 +1,6 @@
 /*
 TODO:
-- Make enemies spawn periodically
-
 - Make custom character in Blender and animate player attacking
-
-- Make enemy attack player
-  - Make player attack enemy
-  - Subtract HP of enemy
-- When enemy has 0 HP, despawn it
 
 LONGTERM:
 - Spawn creatures that interact with character, chase him, hurt him, etc.
@@ -16,6 +9,9 @@ LONGTERM:
 - Refine player movement
 
 DONE:
+- Make enemies spawn periodically
+- Make enemy attack player
+- Make player attack enemy
 - Add different type of enemy, that stands still and shoots bullets
 - Added intersect_with_shape for getting collision for getting bonus and melee attack
 - Make character shoot bullets
@@ -32,7 +28,6 @@ DONE:
 - Add jump
 */
 
-use std::f32::consts::PI;
 use rand::Rng;
 
 use bevy::render::mesh::shape as render_shape;
@@ -40,9 +35,8 @@ use bevy::{ecs::schedule::SystemSet, prelude::*};
 use bevy_rapier3d::prelude::*;
 
 mod enemies;
-use enemies::{Enemy, ChasingEnemy, ChasingEnemyState, ShootingEnemy, ShootingEnemyState};
 mod player;
-use player::{Player};
+use player::Player;
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 enum GameState {
@@ -96,25 +90,19 @@ fn main() {
         .add_state(GameState::Playing)
         .add_startup_system(setup_camera)
         .add_startup_system(setup_light)
-        // .add_startup_system(spawn_player)
         .add_startup_system(spawn_level)
         .add_system_set(SystemSet::on_enter(GameState::Playing).with_system(setup))
         .add_system_set(
             SystemSet::on_update(GameState::Playing)
-                // .with_system(move_player)
                 .with_system(move_cursor)
                 .with_system(move_camera)
                 .with_system(spawn_bonus)
-                // .with_system(player_melee_attack)
-                // .with_system(player_shoot_attack)
                 .with_system(show_health)
-                // .with_system(move_player_bullets)
-                .with_system(get_bonus)
+                .with_system(get_bonus),
         )
         .add_system(bevy::window::close_on_esc)
         .run();
 }
-
 
 fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>, mut commands: Commands) {
     // load the scene for the bonus
@@ -262,7 +250,6 @@ fn get_bonus(
 }
 
 fn spawn_level(
-    asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
@@ -289,58 +276,6 @@ fn spawn_level(
         ))
         .insert(Transform::from_xyz(0.0, -ground_height, 0.0))
         .insert(GlobalTransform::default());
-
-    // Spawn alien
-    commands
-        .spawn(Enemy)
-        .insert(ChasingEnemy(ChasingEnemyState::Chasing))
-        .insert(Health(3))
-        .insert(PbrBundle {
-            transform: Transform::from_xyz(-5.0, 1.0, -5.0),
-            ..default()
-        })
-        .with_children(|cell| {
-            cell.spawn(SceneBundle {
-                scene: asset_server.load("models/AlienCake/alien.glb#Scene0"),
-                transform: Transform {
-                    translation: Vec3::new(0.0, -1.0, 0.0),
-                    rotation: Quat::from_rotation_y(PI),
-                    scale: Vec3::new(2.0, 2.0, 2.0),
-                },
-                ..default()
-            });
-        })
-        .insert(RigidBody::Dynamic)
-        .insert(Velocity::zero())
-        .insert(LockedAxes::ROTATION_LOCKED)
-        .insert(Collider::capsule_y(0.5, 0.5))
-        .insert(Restitution::coefficient(0.7));
-
-    // Spawn skeleton
-    commands
-        .spawn(Enemy)
-        .insert(ShootingEnemy(ShootingEnemyState::Shooting))
-        .insert(Health(3))
-        .insert(PbrBundle {
-            transform: Transform::from_xyz(5.0, 1.0, -5.0),
-            ..default()
-        })
-        .with_children(|cell| {
-            cell.spawn(SceneBundle {
-                scene: asset_server.load("models/AlienCake/characterSkeleton.glb#Scene0"),
-                transform: Transform {
-                    translation: Vec3::new(0.0, -1.0, 0.0),
-                    rotation: Quat::from_rotation_y(PI),
-                    scale: Vec3::new(2.0, 2.0, 2.0),
-                },
-                ..default()
-            });
-        })
-        .insert(RigidBody::Dynamic)
-        .insert(Velocity::zero())
-        .insert(LockedAxes::ROTATION_LOCKED)
-        .insert(Collider::capsule_y(0.5, 0.5))
-        .insert(Restitution::coefficient(0.7));
 }
 
 // despawn the bonus if there is one, then spawn a new one at a random location
