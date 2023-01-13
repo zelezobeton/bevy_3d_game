@@ -9,7 +9,11 @@ use crate::player::Player;
 use crate::{GameState, Health};
 
 #[derive(Component)]
-struct EnemyBullet(Vec3, Entity);
+struct EnemyBullet{
+    shooter: Entity,
+    direction: Vec3,
+    start_position: Vec3
+}
 
 pub enum ChasingEnemyState {
     Chasing,
@@ -65,68 +69,69 @@ fn spawn_enemies(
     time: Res<Time>,
     mut timer: ResMut<EnemySpawnTimer>,
 ) {
-    // println!("{:?}", timer.0.tick(time.delta()).elapsed_secs());
     if timer.0.tick(time.delta()).elapsed_secs() != 0.0 && !timer.0.tick(time.delta()).finished() {
         return;
     }
 
-    // Spawn alien
-    let angle: f32 = rand::thread_rng().gen_range(0.0..1.0) * PI * 2.0;
-    let x_alien = angle.sin() * 7.0;
-    let z_alien = angle.cos() * 7.0;
-    commands
-        .spawn(Enemy)
-        .insert(ChasingEnemy(ChasingEnemyState::Chasing))
-        .insert(Health(3))
-        .insert(PbrBundle {
-            transform: Transform::from_xyz(x_alien, 1.0, z_alien),
-            ..default()
-        })
-        .with_children(|cell| {
-            cell.spawn(SceneBundle {
-                scene: asset_server.load("models/AlienCake/alien.glb#Scene0"),
-                transform: Transform {
-                    translation: Vec3::new(0.0, -1.0, 0.0),
-                    rotation: Quat::from_rotation_y(PI),
-                    scale: Vec3::new(2.0, 2.0, 2.0),
-                },
-                ..default()
-            });
-        })
-        .insert(RigidBody::Dynamic)
-        .insert(Velocity::zero())
-        .insert(LockedAxes::ROTATION_LOCKED)
-        .insert(Collider::capsule_y(0.5, 0.5))
-        .insert(Restitution::coefficient(0.7));
+    let mut rng = rand::thread_rng();
 
-    // Spawn skeleton
-    let angle: f32 = rand::thread_rng().gen_range(0.0..1.0) * PI * 2.0;
-    let x_skeleton = angle.sin() * 7.0;
-    let z_skeleton = angle.cos() * 7.0;
-    commands
-        .spawn(Enemy)
-        .insert(ShootingEnemy(ShootingEnemyState::Shooting))
-        .insert(Health(3))
-        .insert(PbrBundle {
-            transform: Transform::from_xyz(x_skeleton, 1.0, z_skeleton),
-            ..default()
-        })
-        .with_children(|cell| {
-            cell.spawn(SceneBundle {
-                scene: asset_server.load("models/AlienCake/characterSkeleton.glb#Scene0"),
-                transform: Transform {
-                    translation: Vec3::new(0.0, -1.0, 0.0),
-                    rotation: Quat::from_rotation_y(PI),
-                    scale: Vec3::new(2.0, 2.0, 2.0),
-                },
+    // Spawn alien
+    for _ in 0..rng.gen_range(1..=2) {
+        let angle: f32 = rng.gen_range(0.0..1.0) * PI * 2.0;
+        let x_alien = angle.sin() * 7.0;
+        let z_alien = angle.cos() * 7.0;
+        commands
+            .spawn(Enemy)
+            .insert(ChasingEnemy(ChasingEnemyState::Chasing))
+            .insert(Health(3))
+            .insert(PbrBundle {
+                transform: Transform::from_xyz(x_alien, 1.0, z_alien),
                 ..default()
-            });
-        })
-        .insert(RigidBody::Dynamic)
-        .insert(Velocity::zero())
-        .insert(LockedAxes::ROTATION_LOCKED)
-        .insert(Collider::capsule_y(0.5, 0.5))
-        .insert(Restitution::coefficient(0.7));
+            })
+            .with_children(|cell| {
+                cell.spawn(SceneBundle {
+                    scene: asset_server.load("models/AlienCake/alien.glb#Scene0"),
+                    transform: Transform {
+                        translation: Vec3::new(0.0, -1.0, 0.0),
+                        rotation: Quat::from_rotation_y(PI),
+                        scale: Vec3::new(2.0, 2.0, 2.0),
+                    },
+                    ..default()
+                });
+            })
+            .insert(RigidBody::Dynamic)
+            .insert(Velocity::zero())
+            .insert(Collider::capsule_y(0.5, 0.5));
+    }
+
+    // Spawn skeletons
+    for _ in 0..rng.gen_range(1..=1) {
+        let angle: f32 = rng.gen_range(0.0..1.0) * PI * 2.0;
+        let x_skeleton = angle.sin() * 7.0;
+        let z_skeleton = angle.cos() * 7.0;
+        commands
+            .spawn(Enemy)
+            .insert(ShootingEnemy(ShootingEnemyState::Shooting))
+            .insert(Health(3))
+            .insert(PbrBundle {
+                transform: Transform::from_xyz(x_skeleton, 1.0, z_skeleton),
+                ..default()
+            })
+            .with_children(|cell| {
+                cell.spawn(SceneBundle {
+                    scene: asset_server.load("models/AlienCake/characterSkeleton.glb#Scene0"),
+                    transform: Transform {
+                        translation: Vec3::new(0.0, -1.0, 0.0),
+                        rotation: Quat::from_rotation_y(PI),
+                        scale: Vec3::new(2.0, 2.0, 2.0),
+                    },
+                    ..default()
+                });
+            })
+            .insert(RigidBody::Dynamic)
+            .insert(Velocity::zero())
+            .insert(Collider::capsule_y(0.5, 0.5));
+    }
 }
 
 fn move_enemy_bullets(
@@ -139,9 +144,14 @@ fn move_enemy_bullets(
     mut commands: Commands,
 ) {
     const SPEED: f32 = 10.0;
-    for (bullet_entity, mut vel, bullet_tuple, transform) in bullets.iter_mut() {
-        vel.linvel[0] = bullet_tuple.0.x * SPEED;
-        vel.linvel[2] = bullet_tuple.0.z * SPEED;
+    for (bullet_entity, mut vel, bullet_struct, transform) in bullets.iter_mut() {
+        // Despawn bullet after certain distance traveled
+        if bullet_struct.start_position.distance(transform.translation) > 20.0 {
+            commands.entity(bullet_entity).despawn_recursive();
+        }
+
+        vel.linvel[0] = bullet_struct.direction.x * SPEED;
+        vel.linvel[2] = bullet_struct.direction.z * SPEED;
 
         let shape = Collider::ball(0.1);
         let shape_pos = transform.translation;
@@ -149,7 +159,7 @@ fn move_enemy_bullets(
         let shape_vel = vel.linvel;
         let max_toi = 0.0;
         let filter = QueryFilter {
-            exclude_collider: Some(bullet_tuple.1),
+            exclude_collider: Some(bullet_struct.shooter),
             ..default()
         };
 
@@ -197,7 +207,11 @@ fn enemy_shoot_attack(
                         transform: Transform::from_translation(enemy_transform.translation),
                         ..default()
                     })
-                    .insert(EnemyBullet(direction, enemy_entity))
+                    .insert(EnemyBullet{
+                        shooter: enemy_entity,
+                        direction,
+                        start_position: enemy_transform.translation
+                    })
                     .insert(RigidBody::Dynamic)
                     .insert(Velocity::zero());
 
@@ -206,7 +220,7 @@ fn enemy_shoot_attack(
             _ => {
                 // Enemy attack cooldown
                 if !timer.0.tick(time.delta()).finished() {
-                    return;
+                    continue;
                 }
                 enemy_state.0 = ShootingEnemyState::Shooting;
             }
@@ -245,7 +259,7 @@ fn enemy_melee_attack(
                 _ => {
                     // Enemy attack cooldown
                     if !timer.0.tick(time.delta()).finished() {
-                        return;
+                        continue;
                     }
                     enemy_state.0 = ChasingEnemyState::Chasing;
                 }

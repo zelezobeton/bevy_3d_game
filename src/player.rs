@@ -11,12 +11,32 @@ use crate::enemies::Enemy;
 pub struct Player;
 
 #[derive(Component)]
-struct Bullet(Vec3);
+struct Bullet {
+    direction: Vec3,
+    start_position: Vec3
+}
+
+#[derive(PartialEq)]
+enum WeaponType {
+    Pistol,
+    Shotgun,
+    Rifle
+}
+
+#[derive(Component)]
+pub struct Weapon(WeaponType);
+
+#[derive(Resource)]
+struct RifleCooldownTimer(Timer);
 
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app
+            .insert_resource(RifleCooldownTimer(Timer::from_seconds(
+                0.1,
+                TimerMode::Repeating,
+            )))    
             .add_startup_system(spawn_player)
             .add_system_set(
                 SystemSet::on_update(GameState::Playing)
@@ -24,6 +44,7 @@ impl Plugin for PlayerPlugin {
                     .with_system(player_melee_attack)
                     .with_system(player_shoot_attack)
                     .with_system(move_player_bullets)
+                    .with_system(change_weapon)
             );
     }
 }
@@ -37,6 +58,7 @@ fn spawn_player(
         commands
             .spawn(Player)
             .insert(Health(5))
+            .insert(Weapon(WeaponType::Pistol))
             .insert(PbrBundle {
                 transform: Transform::from_xyz(0.0, 1.0, 0.0),
                 ..default()
@@ -56,7 +78,6 @@ fn spawn_player(
             .insert(Velocity::zero())
             .insert(LockedAxes::ROTATION_LOCKED)
             // .insert(GravityScale(0.0)) // May be needed when tweaking movement for RigidBody::Dynamic
-            // .insert(Collider::ball(0.5))
             .insert(Collider::capsule_y(0.5, 0.5))
             .insert(Restitution::coefficient(0.7))
             .id(),
@@ -160,34 +181,73 @@ fn player_melee_attack(
     }
 }
 
+fn spawn_bullet(
+    origin: Vec3,
+    direction: Vec3,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    commands: &mut Commands,
+) {
+    let sphere = render_shape::Capsule {
+        depth: 0.0,
+        radius: 0.1,
+        ..default()
+    };
+    commands
+        .spawn(PbrBundle {
+            mesh: meshes.add(Mesh::from(sphere)),
+            material: materials.add(Color::GOLD.into()),
+            transform: Transform::from_translation(origin),
+            ..default()
+        })
+        .insert(Bullet {
+            direction,
+            start_position: origin
+        })
+        .insert(RigidBody::Dynamic)
+        .insert(Velocity::zero());
+}
+
 fn player_shoot_attack(
-    mut player: Query<&mut Transform, (With<Player>, Without<Cursor>)>,
+    mut player: Query<(&mut Transform, &mut Weapon), (With<Player>, Without<Cursor>)>,
     mut cursor_transform: Query<&mut Transform, (With<Cursor>, Without<Player>)>,
-    mut commands: Commands,
+    mouse: Res<Input<MouseButton>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mouse: Res<Input<MouseButton>>,
+    mut commands: Commands,
+    time: Res<Time>,
+    mut timer: ResMut<RifleCooldownTimer>,
 ) {
-    if mouse.just_pressed(MouseButton::Left) {
-        let direction = (cursor_transform.single_mut().translation
-            - player.single_mut().translation)
+    let direction = (cursor_transform.single_mut().translation
+            - player.single_mut().0.translation)
             .normalize();
 
-        let sphere = render_shape::Capsule {
-            depth: 0.0,
-            radius: 0.1,
-            ..default()
-        };
-        commands
-            .spawn(PbrBundle {
-                mesh: meshes.add(Mesh::from(sphere)),
-                material: materials.add(Color::GOLD.into()),
-                transform: Transform::from_translation(player.single_mut().translation),
-                ..default()
-            })
-            .insert(Bullet(direction))
-            .insert(RigidBody::Dynamic)
-            .insert(Velocity::zero());
+    if mouse.just_pressed(MouseButton::Left) {
+        match player.single_mut().1.0 {
+            WeaponType::Pistol => {
+                spawn_bullet(player.single_mut().0.translation, direction, &mut meshes, &mut materials, &mut commands);
+            },
+            WeaponType::Shotgun => {
+                spawn_bullet(player.single_mut().0.translation, Quat::from_rotation_y(-0.6) * direction, &mut meshes, &mut materials, &mut commands);
+                spawn_bullet(player.single_mut().0.translation, Quat::from_rotation_y(-0.3) * direction, &mut meshes, &mut materials, &mut commands);
+                spawn_bullet(player.single_mut().0.translation, direction, &mut meshes, &mut materials, &mut commands);
+                spawn_bullet(player.single_mut().0.translation, Quat::from_rotation_y(0.3) * direction, &mut meshes, &mut materials, &mut commands);
+                spawn_bullet(player.single_mut().0.translation, Quat::from_rotation_y(0.6) * direction, &mut meshes, &mut materials, &mut commands);
+            },
+            _ => {}
+        }     
+    }
+
+    if mouse.pressed(MouseButton::Left) {
+        if !timer.0.tick(time.delta()).finished() {
+            return;
+        }
+        match player.single_mut().1.0 {
+            WeaponType::Rifle => {
+                spawn_bullet(player.single_mut().0.translation, direction, &mut meshes, &mut materials, &mut commands);
+            },
+            _ => {}
+        }
     }
 }
 
@@ -202,9 +262,14 @@ fn move_player_bullets(
     game: ResMut<Game>,
 ) {
     const SPEED: f32 = 15.0;
-    for (bullet_entity, mut vel, direction, transform) in bullets.iter_mut() {
-        vel.linvel[0] = direction.0.x * SPEED;
-        vel.linvel[2] = direction.0.z * SPEED;
+    for (bullet_entity, mut vel, bullet_struct, transform) in bullets.iter_mut() {
+        // Despawn bullet after certain distance traveled
+        if bullet_struct.start_position.distance(transform.translation) > 20.0 {
+            commands.entity(bullet_entity).despawn_recursive();
+        }
+
+        vel.linvel[0] = bullet_struct.direction.x * SPEED;
+        vel.linvel[2] = bullet_struct.direction.z * SPEED;
 
         let shape = Collider::ball(0.1);
         let shape_pos = transform.translation;
@@ -229,6 +294,28 @@ fn move_player_bullets(
                         commands.entity(enemy_entity).despawn_recursive();
                     }
                 }
+            }
+        }
+    }
+}
+
+fn change_weapon(
+    mut mouse_wheel_er: EventReader<bevy::input::mouse::MouseWheel>,
+    mut player_weapon: Query<&mut Weapon, With<Player>>,
+) {
+    for event in mouse_wheel_er.iter() {
+        if event.y == -1.0 {
+            player_weapon.single_mut().0 = match player_weapon.single_mut().0 {
+                WeaponType::Pistol => WeaponType::Shotgun, 
+                WeaponType::Shotgun => WeaponType::Rifle, 
+                WeaponType::Rifle => WeaponType::Pistol, 
+            }
+        }
+        else if event.y == 1.0 {
+            player_weapon.single_mut().0 = match player_weapon.single_mut().0 {
+                WeaponType::Pistol => WeaponType::Rifle, 
+                WeaponType::Rifle => WeaponType::Shotgun, 
+                WeaponType::Shotgun => WeaponType::Pistol, 
             }
         }
     }
