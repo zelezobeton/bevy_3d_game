@@ -136,7 +136,7 @@ fn spawn_enemies(
 
 fn move_enemy_bullets(
     mut bullets: Query<
-        (Entity, &mut Velocity, &mut EnemyBullet, &mut Transform),
+        (Entity, &mut Velocity, &EnemyBullet, &Transform),
         With<EnemyBullet>,
     >,
     mut player: Query<(Entity, &mut Health), With<Player>>,
@@ -177,9 +177,9 @@ fn move_enemy_bullets(
 }
 
 fn enemy_shoot_attack(
-    mut player: Query<(&mut Transform, &mut Health), (With<Player>, Without<ShootingEnemy>)>,
+    mut player: Query<(&Transform, &mut Health), (With<Player>, Without<ShootingEnemy>)>,
     mut enemies: Query<
-        (Entity, &mut Transform, &mut ShootingEnemy),
+        (Entity, &Transform, &mut ShootingEnemy),
         (With<ShootingEnemy>, Without<Player>),
     >,
     mut commands: Commands,
@@ -229,7 +229,7 @@ fn enemy_shoot_attack(
 }
 
 fn enemy_melee_attack(
-    mut enemies: Query<(&mut Transform, &mut ChasingEnemy), With<Enemy>>,
+    mut enemies: Query<(&Transform, &mut ChasingEnemy), With<Enemy>>,
     mut player: Query<(Entity, &mut Health), With<Player>>,
     rapier_context: Res<RapierContext>,
     time: Res<Time>,
@@ -270,7 +270,7 @@ fn enemy_melee_attack(
 
 fn rotate_enemy(
     mut enemies: Query<&mut Transform, (With<Enemy>, Without<Player>)>,
-    mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>)>,
+    mut player_transform: Query<&Transform, (With<Player>, Without<Enemy>)>,
 ) {
     for mut enemy_transform in enemies.iter_mut() {
         // Get vector representing direction from enemy to player
@@ -285,8 +285,8 @@ fn rotate_enemy(
 }
 
 fn move_enemy(
-    mut enemies: Query<(&mut Transform, &mut Velocity), (With<ChasingEnemy>, Without<Player>)>,
-    mut player_transform: Query<&mut Transform, (With<Player>, Without<ChasingEnemy>)>,
+    mut enemies: Query<(&Transform, &mut Velocity), (With<ChasingEnemy>, Without<Player>)>,
+    mut player_transform: Query<&Transform, (With<Player>, Without<ChasingEnemy>)>,
 ) {
     const SPEED: f32 = 6.0;
     for (enemy_transform, mut enemy_velocity) in enemies.iter_mut() {

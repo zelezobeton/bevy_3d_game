@@ -86,16 +86,14 @@ fn spawn_player(
 
 fn move_player(
     keyboard_input: Res<Input<KeyCode>>,
-    mut player_velocities: Query<&mut Velocity, With<Player>>,
-    mut player_transform: Query<&mut Transform, With<Player>>,
-    cursor_transform: Query<&mut Transform, (With<Cursor>, Without<Player>)>,
+    mut player: Query<(&mut Velocity, &mut Transform), With<Player>>,
+    cursor_transform: Query<&Transform, (With<Cursor>, Without<Player>)>,
     game: ResMut<Game>,
     rapier_context: Res<RapierContext>,
     time: Res<Time>,
 ) {
     const SPEED: f32 = 250.0;
-    let mut vel = player_velocities.single_mut();
-    let mut transform = player_transform.single_mut();
+    let (mut vel, mut transform) = player.single_mut();
 
     // Rotate character using cursor
     let x_pos = cursor_transform.single().translation.x - transform.translation.x;
@@ -149,8 +147,8 @@ fn move_player(
 }
 
 fn player_melee_attack(
-    mut enemies: Query<(Entity, &mut Health), (With<Enemy>, Without<Player>, Without<Cursor>)>,
-    mut player_transform: Query<&mut Transform, (With<Player>, Without<Enemy>, Without<Cursor>)>,
+    mut enemies: Query<(Entity, &mut Health), (Without<Player>, Without<Cursor>)>,
+    mut player_transform: Query<&Transform, (With<Player>, Without<Cursor>)>,
     rapier_context: Res<RapierContext>,
     mut commands: Commands,
     mouse: Res<Input<MouseButton>>,
@@ -209,8 +207,8 @@ fn spawn_bullet(
 }
 
 fn player_shoot_attack(
-    mut player: Query<(&mut Transform, &mut Weapon), (With<Player>, Without<Cursor>)>,
-    mut cursor_transform: Query<&mut Transform, (With<Cursor>, Without<Player>)>,
+    mut player: Query<(&Transform, &Weapon), (With<Player>, Without<Cursor>)>,
+    mut cursor_transform: Query<&Transform, (With<Cursor>, Without<Player>)>,
     mouse: Res<Input<MouseButton>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -253,7 +251,7 @@ fn player_shoot_attack(
 
 fn move_player_bullets(
     mut bullets: Query<
-        (Entity, &mut Velocity, &mut Bullet, &mut Transform),
+        (Entity, &mut Velocity, &Bullet, &Transform),
         With<Bullet>,
     >,
     mut enemies: Query<(Entity, &mut Health), With<Enemy>>,

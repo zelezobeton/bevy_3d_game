@@ -4,11 +4,11 @@ TODO:
 
 LONGTERM:
 - Spawn creatures that interact with character, chase him, hurt him, etc.
-- Add movement around Y-axis with mouse
 - Add levels with different layout, platforms etc.
-- Refine player movement
 
 DONE:
+- Add movement around Y-axis with mouse
+- Refine player movement
 - Make enemies spawn periodically
 - Make enemy attack player
 - Make player attack enemy
@@ -183,7 +183,7 @@ fn setup_light(mut commands: Commands) {
 
 fn move_camera(
     mut camera_transform: Query<&mut Transform, (With<MainCamera>, Without<Player>)>,
-    mut player_transform: Query<&mut Transform, (With<Player>, Without<MainCamera>)>,
+    mut player_transform: Query<&Transform, (With<Player>, Without<MainCamera>)>,
 ) {
     let player_pos = player_transform.single_mut().translation;
 
@@ -225,7 +225,7 @@ fn move_cursor(
 
 fn get_bonus(
     mut player: Query<(Entity, &mut Health), With<Player>>,
-    bonus: Query<(Entity, &mut Transform), With<BonusComponent>>,
+    bonus: Query<(Entity, &Transform), With<BonusComponent>>,
     mut game: ResMut<Game>,
     rapier_context: Res<RapierContext>,
     mut commands: Commands,
@@ -284,7 +284,7 @@ fn spawn_bonus(
     mut timer: ResMut<BonusSpawnTimer>,
     mut commands: Commands,
     mut game: ResMut<Game>,
-    mut player_transform: Query<&mut Transform, With<Player>>,
+    mut player_transform: Query<&Transform, With<Player>>,
 ) {
     // Make sure we wait enough time before spawning the next bonus
     if !timer.0.tick(time.delta()).finished() {
@@ -341,7 +341,7 @@ fn spawn_bonus(
 // Update the health displayed during the game
 fn show_health(
     mut text_query: Query<&mut Text>,
-    mut health_query: Query<&mut Health, With<Player>>,
+    mut health_query: Query<&Health, With<Player>>,
 ) {
     let mut text = text_query.single_mut();
     let health = health_query.single_mut();
