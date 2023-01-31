@@ -106,7 +106,7 @@ fn main() {
 
 fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>, mut commands: Commands) {
     // load the scene for the bonus
-    game.bonus.handle = asset_server.load("models/AlienCake/pumpkin.glb#Scene0");
+    game.bonus.handle = asset_server.load("models/pumpkin.glb#Scene0");
 
     // scoreboard
     commands.spawn(

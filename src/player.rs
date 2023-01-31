@@ -29,6 +29,9 @@ pub struct Weapon(WeaponType);
 #[derive(Resource)]
 struct RifleCooldownTimer(Timer);
 
+#[derive(Resource)]
+struct Animations(Vec<Handle<AnimationClip>>);
+
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
@@ -37,7 +40,7 @@ impl Plugin for PlayerPlugin {
                 0.1,
                 TimerMode::Repeating,
             )))    
-            .add_startup_system(spawn_player)
+            .add_startup_system(setup)
             .add_system_set(
                 SystemSet::on_update(GameState::Playing)
                     .with_system(move_player)
@@ -45,15 +48,37 @@ impl Plugin for PlayerPlugin {
                     .with_system(player_shoot_attack)
                     .with_system(move_player_bullets)
                     .with_system(change_weapon)
+                    .with_system(animate_player)
             );
     }
 }
 
-fn spawn_player(
+fn animate_player(
+    animations: Res<Animations>,
+    mut anim_player: Query<&mut AnimationPlayer>,
+    player_velocity: Query<&Velocity, With<Player>>,
+) {
+    if let Ok(mut anim_player) = anim_player.get_single_mut() {
+        if player_velocity.single().linvel.length() < 0.5 {
+            anim_player.play(animations.0[0].clone_weak()).repeat();
+        }
+        else {
+            anim_player.play(animations.0[2].clone_weak()).repeat();
+        }
+    }
+}
+
+fn setup(
     asset_server: Res<AssetServer>, 
     mut commands: Commands, 
     mut game: ResMut<Game>
 ) {
+    commands.insert_resource(Animations(vec![
+        asset_server.load("models/char_anim.glb#Animation0"),
+        asset_server.load("models/char_anim.glb#Animation1"),
+        asset_server.load("models/char_anim.glb#Animation2")
+    ]));
+
     game.player = Some(
         commands
             .spawn(Player)
@@ -65,11 +90,11 @@ fn spawn_player(
             })
             .with_children(|cell| {
                 cell.spawn(SceneBundle {
-                    scene: asset_server.load("models/AlienCake/characterDigger.glb#Scene0"),
+                    scene: asset_server.load("models/char_anim.glb#Scene0"),
                     transform: Transform {
-                        translation: Vec3::new(0.0, -1.0, 0.0),
-                        rotation: Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
-                        scale: Vec3::new(2.0, 2.0, 2.0),
+                        translation: Vec3::new(0.0, 0.25, 0.0),
+                        rotation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+                        scale: Vec3::new(0.5, 0.5, 0.5),
                     },
                     ..default()
                 });
@@ -216,9 +241,9 @@ fn player_shoot_attack(
     time: Res<Time>,
     mut timer: ResMut<RifleCooldownTimer>,
 ) {
-    let direction = (cursor_transform.single_mut().translation
-            - player.single_mut().0.translation)
-            .normalize();
+    let mut direction: Vec3 = cursor_transform.single_mut().translation - player.single_mut().0.translation;
+    let direction_vec2 = Vec2::new(direction.x, direction.z).normalize();
+    direction = Vec3::new(direction_vec2.x, 0.0, direction_vec2.y);
 
     if mouse.just_pressed(MouseButton::Left) {
         match player.single_mut().1.0 {
@@ -307,13 +332,6 @@ fn change_weapon(
                 WeaponType::Pistol => WeaponType::Shotgun, 
                 WeaponType::Shotgun => WeaponType::Rifle, 
                 WeaponType::Rifle => WeaponType::Pistol, 
-            }
-        }
-        else if event.y == 1.0 {
-            player_weapon.single_mut().0 = match player_weapon.single_mut().0 {
-                WeaponType::Pistol => WeaponType::Rifle, 
-                WeaponType::Rifle => WeaponType::Shotgun, 
-                WeaponType::Shotgun => WeaponType::Pistol, 
             }
         }
     }

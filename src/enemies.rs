@@ -40,6 +40,9 @@ struct EnemyAttackTimer(Timer);
 #[derive(Resource)]
 struct EnemySpawnTimer(Timer);
 
+// #[derive(Resource)]
+// struct Animations(Vec<Handle<AnimationClip>>);
+
 pub struct EnemiesPlugin;
 impl Plugin for EnemiesPlugin {
     fn build(&self, app: &mut App) {
@@ -51,6 +54,7 @@ impl Plugin for EnemiesPlugin {
             7.0,
             TimerMode::Repeating,
         )))
+        // .add_startup_system(setup)
         .add_system_set(
             SystemSet::on_update(GameState::Playing)
                 .with_system(spawn_enemies)
@@ -59,9 +63,38 @@ impl Plugin for EnemiesPlugin {
                 .with_system(enemy_melee_attack)
                 .with_system(enemy_shoot_attack)
                 .with_system(move_enemy_bullets)
+                // .with_system(animate_enemies)
         );
     }
 }
+
+// fn animate_enemies(
+//     animations: Res<Animations>,
+//     mut anim_player: Query<&mut AnimationPlayer>,
+//     enemies: Query<&Velocity, With<Enemy>>,
+// ) {
+//     if let Ok(mut anim_player) = anim_player.get_single_mut() {
+//         for enemy_velocity in enemies.iter() {
+//             if enemy_velocity.linvel.length() < 0.5 {
+//                 anim_player.play(animations.0[0].clone_weak()).repeat();
+//             }
+//             else {
+//                 anim_player.play(animations.0[2].clone_weak()).repeat();
+//             }
+//         }
+//     }
+// }
+
+// fn setup(
+//     asset_server: Res<AssetServer>, 
+//     mut commands: Commands, 
+// ) {
+//     commands.insert_resource(Animations(vec![
+//         asset_server.load("models/enemy1_anim.glb#Animation0"),
+//         asset_server.load("models/enemy1_anim.glb#Animation1"),
+//         asset_server.load("models/enemy1_anim.glb#Animation2")
+//     ]));
+// }
 
 fn spawn_enemies(
     asset_server: Res<AssetServer>,
@@ -90,7 +123,8 @@ fn spawn_enemies(
             })
             .with_children(|cell| {
                 cell.spawn(SceneBundle {
-                    scene: asset_server.load("models/AlienCake/alien.glb#Scene0"),
+                    scene: asset_server.load("models/alien.glb#Scene0"),
+                    // scene: asset_server.load("models/enemy1_anim.glb#Scene0"),
                     transform: Transform {
                         translation: Vec3::new(0.0, -1.0, 0.0),
                         rotation: Quat::from_rotation_y(PI),
@@ -119,7 +153,8 @@ fn spawn_enemies(
             })
             .with_children(|cell| {
                 cell.spawn(SceneBundle {
-                    scene: asset_server.load("models/AlienCake/characterSkeleton.glb#Scene0"),
+                    scene: asset_server.load("models/skeleton.glb#Scene0"),
+                    // scene: asset_server.load("models/enemy2_anim.glb#Scene0"),
                     transform: Transform {
                         translation: Vec3::new(0.0, -1.0, 0.0),
                         rotation: Quat::from_rotation_y(PI),
