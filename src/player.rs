@@ -29,9 +29,6 @@ pub struct Weapon(WeaponType);
 #[derive(Resource)]
 struct RifleCooldownTimer(Timer);
 
-#[derive(Resource)]
-struct Animations(Vec<Handle<AnimationClip>>);
-
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
@@ -48,23 +45,7 @@ impl Plugin for PlayerPlugin {
                     .with_system(player_shoot_attack)
                     .with_system(move_player_bullets)
                     .with_system(change_weapon)
-                    .with_system(animate_player)
             );
-    }
-}
-
-fn animate_player(
-    animations: Res<Animations>,
-    mut anim_player: Query<&mut AnimationPlayer>,
-    player_velocity: Query<&Velocity, With<Player>>,
-) {
-    if let Ok(mut anim_player) = anim_player.get_single_mut() {
-        if player_velocity.single().linvel.length() < 0.5 {
-            anim_player.play(animations.0[0].clone_weak()).repeat();
-        }
-        else {
-            anim_player.play(animations.0[2].clone_weak()).repeat();
-        }
     }
 }
 
@@ -73,12 +54,6 @@ fn setup(
     mut commands: Commands, 
     mut game: ResMut<Game>
 ) {
-    commands.insert_resource(Animations(vec![
-        asset_server.load("models/char_anim.glb#Animation0"),
-        asset_server.load("models/char_anim.glb#Animation1"),
-        asset_server.load("models/char_anim.glb#Animation2")
-    ]));
-
     game.player = Some(
         commands
             .spawn(Player)
@@ -90,11 +65,11 @@ fn setup(
             })
             .with_children(|cell| {
                 cell.spawn(SceneBundle {
-                    scene: asset_server.load("models/char_anim.glb#Scene0"),
+                    scene: asset_server.load("models/characterDigger.glb#Scene0"),
                     transform: Transform {
-                        translation: Vec3::new(0.0, 0.25, 0.0),
-                        rotation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
-                        scale: Vec3::new(0.5, 0.5, 0.5),
+                        translation: Vec3::new(0.0, -1.0, 0.0),
+                        rotation: Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
+                        scale: Vec3::new(2.0, 2.0, 2.0),
                     },
                     ..default()
                 });
