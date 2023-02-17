@@ -1,13 +1,18 @@
 /*
 TODO:
-- Make custom character in Blender and animate player attacking
+- Add boss with few special attacks
+- Add text information when attacks happens (floating text)
+- Create custom meshes for enemies? (choose theme)
 
 LONGTERM:
-- Spawn creatures that interact with character, chase him, hurt him, etc.
 - Add levels with different layout, platforms etc.
 
 DONE:
-- Add movement around Y-axis with mouse
+- Add different kinds of enemies
+  - One with shotgun shooting 3 balls
+  - One that shoots 8 balls around itself
+- Spawn creatures that interact with character, chase him, hurt him, etc.
+- Make custom character in Blender and animate player attacking
 - Refine player movement
 - Make enemies spawn periodically
 - Make enemy attack player
@@ -254,7 +259,7 @@ fn spawn_level(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
 ) {
-    let ground_size = 20.1;
+    let ground_size = 20.0;
     let ground_height = 0.1;
 
     // Spawn ground

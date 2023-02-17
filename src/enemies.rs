@@ -15,24 +15,24 @@ struct EnemyBullet{
     start_position: Vec3
 }
 
-pub enum ChasingEnemyState {
+pub enum EnemyState {
+    Attacking,
+    Cooldown,
+}
+
+#[derive(PartialEq)]
+pub enum EnemyType {
     Chasing,
-    Cooldown,
-}
-
-pub enum ShootingEnemyState {
-    Shooting,
-    Cooldown,
+    Pistol,
+    Shotgun,
+    Star
 }
 
 #[derive(Component)]
-pub struct Enemy;
-
-#[derive(Component)]
-pub struct ChasingEnemy(pub ChasingEnemyState);
-
-#[derive(Component)]
-pub struct ShootingEnemy(pub ShootingEnemyState);
+pub struct Enemy {
+    enemy_type: EnemyType,
+    enemy_state: EnemyState
+}
 
 #[derive(Resource)]
 struct EnemyAttackTimer(Timer);
@@ -63,6 +63,39 @@ impl Plugin for EnemiesPlugin {
     }
 }
 
+fn spawn_enemy(
+    enemy_type: EnemyType,
+    model: &str,
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+) {
+    let mut rng = rand::thread_rng();
+    let angle: f32 = rng.gen_range(0.0..1.0) * PI * 2.0;
+    let x = angle.sin() * 7.0;
+    let z = angle.cos() * 7.0;
+    commands
+        .spawn(Enemy{enemy_state: EnemyState::Attacking, enemy_type: enemy_type})
+        .insert(Health(3))
+        .insert(PbrBundle {
+            transform: Transform::from_xyz(x, 1.0, z),
+            ..default()
+        })
+        .with_children(|cell| {
+            cell.spawn(SceneBundle {
+                scene: asset_server.load(model),
+                transform: Transform {
+                    translation: Vec3::new(0.0, -1.0, 0.0),
+                    rotation: Quat::from_rotation_y(PI),
+                    scale: Vec3::new(2.0, 2.0, 2.0),
+                },
+                ..default()
+            });
+        })
+        .insert(RigidBody::Dynamic)
+        .insert(Velocity::zero())
+        .insert(Collider::capsule_y(0.5, 0.5));
+}
+
 fn spawn_enemies(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
@@ -74,65 +107,20 @@ fn spawn_enemies(
     }
 
     let mut rng = rand::thread_rng();
-
-    // Spawn alien
-    for _ in 0..rng.gen_range(1..=2) {
-        let angle: f32 = rng.gen_range(0.0..1.0) * PI * 2.0;
-        let x_alien = angle.sin() * 7.0;
-        let z_alien = angle.cos() * 7.0;
-        commands
-            .spawn(Enemy)
-            .insert(ChasingEnemy(ChasingEnemyState::Chasing))
-            .insert(Health(3))
-            .insert(PbrBundle {
-                transform: Transform::from_xyz(x_alien, 1.0, z_alien),
-                ..default()
-            })
-            .with_children(|cell| {
-                cell.spawn(SceneBundle {
-                    scene: asset_server.load("models/alien.glb#Scene0"),
-                    // scene: asset_server.load("models/enemy1_anim.glb#Scene0"),
-                    transform: Transform {
-                        translation: Vec3::new(0.0, -1.0, 0.0),
-                        rotation: Quat::from_rotation_y(PI),
-                        scale: Vec3::new(2.0, 2.0, 2.0),
-                    },
-                    ..default()
-                });
-            })
-            .insert(RigidBody::Dynamic)
-            .insert(Velocity::zero())
-            .insert(Collider::capsule_y(0.5, 0.5));
-    }
-
-    // Spawn skeletons
-    for _ in 0..rng.gen_range(1..=1) {
-        let angle: f32 = rng.gen_range(0.0..1.0) * PI * 2.0;
-        let x_skeleton = angle.sin() * 7.0;
-        let z_skeleton = angle.cos() * 7.0;
-        commands
-            .spawn(Enemy)
-            .insert(ShootingEnemy(ShootingEnemyState::Shooting))
-            .insert(Health(3))
-            .insert(PbrBundle {
-                transform: Transform::from_xyz(x_skeleton, 1.0, z_skeleton),
-                ..default()
-            })
-            .with_children(|cell| {
-                cell.spawn(SceneBundle {
-                    scene: asset_server.load("models/skeleton.glb#Scene0"),
-                    // scene: asset_server.load("models/enemy2_anim.glb#Scene0"),
-                    transform: Transform {
-                        translation: Vec3::new(0.0, -1.0, 0.0),
-                        rotation: Quat::from_rotation_y(PI),
-                        scale: Vec3::new(2.0, 2.0, 2.0),
-                    },
-                    ..default()
-                });
-            })
-            .insert(RigidBody::Dynamic)
-            .insert(Velocity::zero())
-            .insert(Collider::capsule_y(0.5, 0.5));
+    match rng.gen_range(1..=4) {
+        1 => {
+            spawn_enemy(EnemyType::Chasing, "models/characterZombie.glb#Scene0", &mut commands, &asset_server)
+        },
+        2 => {
+            spawn_enemy(EnemyType::Pistol, "models/characterSkeleton.glb#Scene0", &mut commands, &asset_server)
+        }
+        3 => {
+            spawn_enemy(EnemyType::Shotgun, "models/characterGhost.glb#Scene0", &mut commands, &asset_server)
+        },
+        4 => {
+            spawn_enemy(EnemyType::Star, "models/characterVampire.glb#Scene0", &mut commands, &asset_server)
+        },
+        _ => unreachable!()
     }
 }
 
@@ -178,11 +166,40 @@ fn move_enemy_bullets(
     }
 }
 
+fn spawn_bullet(
+    origin: Vec3,
+    direction: Vec3,
+    shooter: Entity,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    commands: &mut Commands,
+) {
+    let sphere = render_shape::Capsule {
+        depth: 0.0,
+        radius: 0.1,
+        ..default()
+    };
+    commands
+        .spawn(PbrBundle {
+            mesh: meshes.add(Mesh::from(sphere)),
+            material: materials.add(Color::BLUE.into()),
+            transform: Transform::from_translation(origin),
+            ..default()
+        })
+        .insert(EnemyBullet{
+            shooter,
+            direction,
+            start_position: origin
+        })
+        .insert(RigidBody::Dynamic)
+        .insert(Velocity::zero());
+}
+
 fn enemy_shoot_attack(
-    mut player: Query<(&Transform, &mut Health), (With<Player>, Without<ShootingEnemy>)>,
+    mut player: Query<(&Transform, &mut Health), (With<Player>, Without<Enemy>)>,
     mut enemies: Query<
-        (Entity, &Transform, &mut ShootingEnemy),
-        (With<ShootingEnemy>, Without<Player>),
+        (Entity, &Transform, &mut Enemy),
+        (With<Enemy>, Without<Player>),
     >,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -190,54 +207,65 @@ fn enemy_shoot_attack(
     time: Res<Time>,
     mut timer: ResMut<EnemyAttackTimer>,
 ) {
-    for (enemy_entity, enemy_transform, mut enemy_state) in enemies.iter_mut() {
+    for (enemy_entity, enemy_transform, mut enemy) in enemies.iter_mut() {
+        if enemy.enemy_type == EnemyType::Chasing {
+            continue
+        }
+
         let direction =
             (player.single_mut().0.translation - enemy_transform.translation).normalize();
 
-        match enemy_state.0 {
-            ShootingEnemyState::Shooting => {
-                // Shoot bullet
-                let sphere = render_shape::Capsule {
-                    depth: 0.0,
-                    radius: 0.1,
-                    ..default()
-                };
-                commands
-                    .spawn(PbrBundle {
-                        mesh: meshes.add(Mesh::from(sphere)),
-                        material: materials.add(Color::BLUE.into()),
-                        transform: Transform::from_translation(enemy_transform.translation),
-                        ..default()
-                    })
-                    .insert(EnemyBullet{
-                        shooter: enemy_entity,
-                        direction,
-                        start_position: enemy_transform.translation
-                    })
-                    .insert(RigidBody::Dynamic)
-                    .insert(Velocity::zero());
+        match enemy.enemy_state {
+            EnemyState::Attacking => {
 
-                enemy_state.0 = ShootingEnemyState::Cooldown;
+                match enemy.enemy_type {
+                    EnemyType::Pistol => {
+                        spawn_bullet(enemy_transform.translation, direction, enemy_entity, &mut meshes, &mut materials, &mut commands);
+                    }
+                    EnemyType::Shotgun => {
+                        spawn_bullet(enemy_transform.translation, Quat::from_rotation_y(-0.3) * direction, enemy_entity, &mut meshes, &mut materials, &mut commands);
+                        spawn_bullet(enemy_transform.translation, direction, enemy_entity, &mut meshes, &mut materials, &mut commands);
+                        spawn_bullet(enemy_transform.translation, Quat::from_rotation_y(0.3) * direction, enemy_entity, &mut meshes, &mut materials, &mut commands);
+                    }
+                    EnemyType::Star => {
+                        spawn_bullet(enemy_transform.translation, Vec3::new(1.0, 0.0, 0.0), enemy_entity, &mut meshes, &mut materials, &mut commands);
+                        spawn_bullet(enemy_transform.translation, Vec3::new(0.0, 0.0, 1.0), enemy_entity, &mut meshes, &mut materials, &mut commands);
+                        spawn_bullet(enemy_transform.translation, Vec3::new(0.0, 0.0, -1.0), enemy_entity, &mut meshes, &mut materials, &mut commands);
+                        spawn_bullet(enemy_transform.translation, Vec3::new(-1.0, 0.0, 0.0), enemy_entity, &mut meshes, &mut materials, &mut commands);
+                        spawn_bullet(enemy_transform.translation, Vec3::new(1.0, 0.0, 1.0), enemy_entity, &mut meshes, &mut materials, &mut commands);
+                        spawn_bullet(enemy_transform.translation, Vec3::new(-1.0, 0.0, 1.0), enemy_entity, &mut meshes, &mut materials, &mut commands);
+                        spawn_bullet(enemy_transform.translation, Vec3::new(1.0, 0.0, -1.0), enemy_entity, &mut meshes, &mut materials, &mut commands);
+                        spawn_bullet(enemy_transform.translation, Vec3::new(-1.0, 0.0, -1.0), enemy_entity, &mut meshes, &mut materials, &mut commands);
+                        
+                    }
+                    _ => {}
+                }
+
+                enemy.enemy_state = EnemyState::Cooldown;
             }
             _ => {
                 // Enemy attack cooldown
                 if !timer.0.tick(time.delta()).finished() {
                     continue;
                 }
-                enemy_state.0 = ShootingEnemyState::Shooting;
+                enemy.enemy_state = EnemyState::Attacking;
             }
         }
     }
 }
 
 fn enemy_melee_attack(
-    mut enemies: Query<(&Transform, &mut ChasingEnemy), With<Enemy>>,
+    mut enemies: Query<(&Transform, &mut Enemy), With<Enemy>>,
     mut player: Query<(Entity, &mut Health), With<Player>>,
     rapier_context: Res<RapierContext>,
     time: Res<Time>,
     mut timer: ResMut<EnemyAttackTimer>,
 ) {
-    for (enemy_transform, mut enemy_state) in enemies.iter_mut() {
+    for (enemy_transform, mut enemy) in enemies.iter_mut() {
+        if enemy.enemy_type != EnemyType::Chasing {
+            continue
+        }
+
         let shape = Collider::ball(1.0);
         let shape_pos = enemy_transform.translation;
         let shape_rot = enemy_transform.rotation;
@@ -252,18 +280,18 @@ fn enemy_melee_attack(
         });
 
         if player_is_hit {
-            match enemy_state.0 {
-                ChasingEnemyState::Chasing => {
+            match enemy.enemy_state {
+                EnemyState::Attacking => {
                     // Attack player
                     player.single_mut().1 .0 -= 1;
-                    enemy_state.0 = ChasingEnemyState::Cooldown;
+                    enemy.enemy_state = EnemyState::Cooldown;
                 }
                 _ => {
                     // Enemy attack cooldown
                     if !timer.0.tick(time.delta()).finished() {
                         continue;
                     }
-                    enemy_state.0 = ChasingEnemyState::Chasing;
+                    enemy.enemy_state = EnemyState::Attacking;
                 }
             }
         }
@@ -287,11 +315,15 @@ fn rotate_enemy(
 }
 
 fn move_enemy(
-    mut enemies: Query<(&Transform, &mut Velocity), (With<ChasingEnemy>, Without<Player>)>,
-    mut player_transform: Query<&Transform, (With<Player>, Without<ChasingEnemy>)>,
+    mut enemies: Query<(&Transform, &mut Velocity, &mut Enemy), (With<Enemy>, Without<Player>)>,
+    mut player_transform: Query<&Transform, (With<Player>, Without<Enemy>)>,
 ) {
     const SPEED: f32 = 6.0;
-    for (enemy_transform, mut enemy_velocity) in enemies.iter_mut() {
+    for (enemy_transform, mut enemy_velocity, enemy) in enemies.iter_mut() {
+        if enemy.enemy_type != EnemyType::Chasing {
+            continue
+        }
+
         // Get vector representing direction from enemy to player
         let mut direction_vec =
             player_transform.single_mut().translation - enemy_transform.translation;
