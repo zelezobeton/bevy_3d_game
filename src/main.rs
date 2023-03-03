@@ -60,6 +60,21 @@ struct BonusComponent;
 #[derive(Component)]
 struct Health(i32);
 
+#[derive(Component)]
+struct HealthText;
+
+#[derive(Component)]
+pub struct FloatingText {
+    pub offset: f32,
+    pub time_to_live: f32,
+}
+
+pub struct FloatingTextEvent {
+    pub translation: Vec3,
+    pub text: String,
+    pub color: Color,
+}
+
 #[derive(Default)]
 struct Bonus {
     entity: Option<Entity>,
@@ -103,10 +118,60 @@ fn main() {
                 .with_system(move_camera)
                 .with_system(spawn_bonus)
                 .with_system(show_health)
-                .with_system(get_bonus),
+                .with_system(get_bonus)
+                .with_system(create_floating_text),
         )
+        .add_event::<FloatingTextEvent>()
         .add_system(bevy::window::close_on_esc)
         .run();
+}
+
+fn create_floating_text(
+    mut commands: Commands,
+    camera: Query<(&Camera, &mut GlobalTransform), (With<MainCamera>, Without<Player>)>,
+    mut attack_text: Query<(Entity, &mut FloatingText)>,
+    asset_server: Res<AssetServer>,
+    time: Res<Time>,
+    mut floating_text_event_reader: EventReader<FloatingTextEvent>,
+) {
+    for event in floating_text_event_reader.iter() {
+        for (camera, global_transform) in camera.iter() {
+            match camera.world_to_viewport(global_transform, event.translation) {
+                Some(coords) => {
+                    commands.spawn(
+                        TextBundle::from_section(
+                            event.text.clone(),
+                            TextStyle {
+                                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                                font_size: 40.0,
+                                color: event.color,
+                            },
+                        )
+                        .with_style(Style {
+                            position_type: PositionType::Absolute,
+                            position: UiRect {
+                                bottom: Val::Px(coords.y),
+                                left: Val::Px(coords.x),
+                                ..default()
+                            },
+                            ..default()
+                        }),
+                    )
+                    .insert(FloatingText{offset: 0.0, time_to_live: 1.0});
+                }
+                None => {}
+            }
+        }
+    }
+
+    // Calculate when floating text should be hidden 
+    for (entity, mut attack_text_struct) in attack_text.iter_mut() {
+        attack_text_struct.offset += time.delta_seconds();
+
+        if attack_text_struct.offset > attack_text_struct.time_to_live {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
 }
 
 fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>, mut commands: Commands) {
@@ -120,7 +185,7 @@ fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>, mut commands: C
             TextStyle {
                 font: asset_server.load("fonts/FiraSans-Bold.ttf"),
                 font_size: 40.0,
-                color: Color::rgb(0.5, 0.5, 1.0),
+                color: Color::rgb(0.7, 0.0, 0.0),
             },
         )
         .with_style(Style {
@@ -132,7 +197,7 @@ fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>, mut commands: C
             },
             ..default()
         }),
-    );
+    ).insert(HealthText);
 
     // Setup cursor
     commands
@@ -345,7 +410,7 @@ fn spawn_bonus(
 
 // Update the health displayed during the game
 fn show_health(
-    mut text_query: Query<&mut Text>,
+    mut text_query: Query<&mut Text, With<HealthText>>,
     mut health_query: Query<&Health, With<Player>>,
 ) {
     let mut text = text_query.single_mut();

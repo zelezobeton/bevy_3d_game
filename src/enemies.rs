@@ -6,7 +6,7 @@ use bevy::{ecs::schedule::SystemSet, prelude::*};
 use bevy_rapier3d::prelude::*;
 
 use crate::player::Player;
-use crate::{GameState, Health};
+use crate::{GameState, Health, FloatingTextEvent};
 
 #[derive(Component)]
 struct EnemyBullet{
@@ -25,7 +25,8 @@ pub enum EnemyType {
     Chasing,
     Pistol,
     Shotgun,
-    Star
+    Star,
+    Boss
 }
 
 #[derive(Component)]
@@ -61,6 +62,39 @@ impl Plugin for EnemiesPlugin {
                 .with_system(move_enemy_bullets)
         );
     }
+}
+
+fn spawn_boss_enemy(
+    enemy_type: EnemyType,
+    model: &str,
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+) {
+    let mut rng = rand::thread_rng();
+    let angle: f32 = rng.gen_range(0.0..1.0) * PI * 2.0;
+    let x = angle.sin() * 7.0;
+    let z = angle.cos() * 7.0;
+    commands
+        .spawn(Enemy{enemy_state: EnemyState::Attacking, enemy_type: enemy_type})
+        .insert(Health(3))
+        .insert(PbrBundle {
+            transform: Transform::from_xyz(x, 1.0, z),
+            ..default()
+        })
+        .with_children(|cell| {
+            cell.spawn(SceneBundle {
+                scene: asset_server.load(model),
+                transform: Transform {
+                    translation: Vec3::new(0.0, -2.0, 0.0),
+                    rotation: Quat::from_rotation_y(PI),
+                    scale: Vec3::new(4.0, 4.0, 4.0),
+                },
+                ..default()
+            });
+        })
+        .insert(RigidBody::Dynamic)
+        .insert(Velocity::zero())
+        .insert(Collider::capsule_y(1.0, 1.0));
 }
 
 fn spawn_enemy(
@@ -119,6 +153,9 @@ fn spawn_enemies(
         },
         4 => {
             spawn_enemy(EnemyType::Star, "models/characterVampire.glb#Scene0", &mut commands, &asset_server)
+        },
+        5 => {
+            spawn_boss_enemy(EnemyType::Boss, "models/characterAlien.glb#Scene0", &mut commands, &asset_server)
         },
         _ => unreachable!()
     }
@@ -256,10 +293,11 @@ fn enemy_shoot_attack(
 
 fn enemy_melee_attack(
     mut enemies: Query<(&Transform, &mut Enemy), With<Enemy>>,
-    mut player: Query<(Entity, &mut Health), With<Player>>,
+    mut player: Query<(Entity, &mut Health, &Transform), With<Player>>,
     rapier_context: Res<RapierContext>,
     time: Res<Time>,
     mut timer: ResMut<EnemyAttackTimer>,
+    mut floating_text_event_writer: EventWriter<FloatingTextEvent>,
 ) {
     for (enemy_transform, mut enemy) in enemies.iter_mut() {
         if enemy.enemy_type != EnemyType::Chasing {
@@ -283,7 +321,15 @@ fn enemy_melee_attack(
             match enemy.enemy_state {
                 EnemyState::Attacking => {
                     // Attack player
-                    player.single_mut().1 .0 -= 1;
+                    player.single_mut().1.0 -= 1;
+
+                    // Create floating text
+                    floating_text_event_writer.send(FloatingTextEvent {
+                        translation: player.single_mut().2.translation,
+                        text: "-1".into(),
+                        color: Color::rgb(0.7, 0.0, 0.0),
+                    });
+
                     enemy.enemy_state = EnemyState::Cooldown;
                 }
                 _ => {

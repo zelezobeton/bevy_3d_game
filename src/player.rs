@@ -4,7 +4,7 @@ use bevy::{ecs::schedule::SystemSet, prelude::*};
 use bevy::render::mesh::shape as render_shape;
 use bevy_rapier3d::prelude::*;
 
-use crate::{GameState, Health, Game, Cursor};
+use crate::{GameState, Health, Game, Cursor, FloatingTextEvent};
 use crate::enemies::Enemy;
 
 #[derive(Component)]
@@ -147,14 +147,15 @@ fn move_player(
 }
 
 fn player_melee_attack(
-    mut enemies: Query<(Entity, &mut Health), (Without<Player>, Without<Cursor>)>,
-    mut player_transform: Query<&Transform, (With<Player>, Without<Cursor>)>,
+    mut enemies: Query<(Entity, &mut Health, &Transform), (With<Enemy>, Without<Player>)>,
+    mut player_transform: Query<&Transform, (With<Player>, Without<Enemy>)>,
     rapier_context: Res<RapierContext>,
     mut commands: Commands,
     mouse: Res<Input<MouseButton>>,
+    mut floating_text_event_writer: EventWriter<FloatingTextEvent>,
 ) {
     if mouse.just_pressed(MouseButton::Right) {
-        for (enemy_entity, mut enemy_health) in enemies.iter_mut() {
+        for (enemy_entity, mut enemy_health, enemy_transform) in enemies.iter_mut() {
             let shape = Collider::ball(1.0);
             let shape_pos = player_transform.single_mut().translation;
             let shape_rot = player_transform.single_mut().rotation;
@@ -168,6 +169,14 @@ fn player_melee_attack(
                 |entity| {
                     if entity == enemy_entity {
                         enemy_health.0 -= 1;
+                        
+                        // Create floating text
+                        floating_text_event_writer.send(FloatingTextEvent {
+                            translation: enemy_transform.translation,
+                            text: "-1".into(),
+                            color: Color::rgb(0.7, 0.0, 0.0),
+                        });
+
                         if enemy_health.0 == 0 {
                             commands.entity(enemy_entity).despawn_recursive();
                         }
