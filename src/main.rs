@@ -36,15 +36,17 @@ DONE:
 use rand::Rng;
 
 use bevy::render::mesh::shape as render_shape;
-use bevy::{ecs::schedule::SystemSet, prelude::*};
+use bevy::{ecs::schedule::SystemSet, prelude::*, window::PrimaryWindow};
 use bevy_rapier3d::prelude::*;
 
-mod enemies;
 mod player;
+mod enemies;
+mod bosses;
 use player::Player;
 
-#[derive(Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
 enum GameState {
+    #[default]
     Playing,
 }
 
@@ -100,26 +102,31 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
         // .add_plugin(RapierDebugRenderPlugin::default())
-        .add_plugin(enemies::EnemiesPlugin)
         .add_plugin(player::PlayerPlugin)
+        .add_plugin(enemies::EnemiesPlugin)
+        .add_plugin(bosses::BossesPlugin)
         .init_resource::<Game>()
         .insert_resource(BonusSpawnTimer(Timer::from_seconds(
             5.0,
             TimerMode::Repeating,
         )))
-        .add_state(GameState::Playing)
-        .add_startup_system(setup_camera)
-        .add_startup_system(setup_light)
-        .add_startup_system(spawn_level)
-        .add_system_set(SystemSet::on_enter(GameState::Playing).with_system(setup))
-        .add_system_set(
-            SystemSet::on_update(GameState::Playing)
-                .with_system(move_cursor)
-                .with_system(move_camera)
-                .with_system(spawn_bonus)
-                .with_system(show_health)
-                .with_system(get_bonus)
-                .with_system(create_floating_text),
+        .add_state::<GameState>()
+        .add_systems((
+            setup_camera.on_startup(),
+            setup_light.on_startup(),
+            spawn_level.on_startup(),
+            setup.in_schedule(OnEnter(GameState::Playing)),
+        ))
+        .add_systems(
+            (
+                move_cursor,
+                move_camera,
+                spawn_bonus,
+                show_health,
+                spawn_bonus,
+                get_bonus
+            )
+            .in_set(OnUpdate(GameState::Playing)),
         )
         .add_event::<FloatingTextEvent>()
         .add_system(bevy::window::close_on_esc)
@@ -224,21 +231,9 @@ fn setup_camera(mut commands: Commands) {
 }
 
 fn setup_light(mut commands: Commands) {
-    const HALF_SIZE: f32 = 100.0;
-
     commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
-            illuminance: 10000.0,
-            // Configure the projection to better fit the scene
-            shadow_projection: OrthographicProjection {
-                left: -HALF_SIZE,
-                right: HALF_SIZE,
-                bottom: -HALF_SIZE,
-                top: HALF_SIZE,
-                near: -10.0 * HALF_SIZE,
-                far: 100.0 * HALF_SIZE,
-                ..default()
-            },
+            illuminance: 7000.0,
             shadows_enabled: true,
             ..default()
         },
@@ -269,12 +264,15 @@ fn move_camera(
 
 fn move_cursor(
     rapier_context: Res<RapierContext>,
-    windows: ResMut<Windows>,
+    primary_query: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform), (With<MainCamera>, Without<Player>)>,
     mut cursor_transform: Query<&mut Transform, With<Cursor>>,
 ) {
     let (camera, camera_transform) = q_camera.single();
-    if let Some(screen_pos) = windows.primary().cursor_position() {
+    let Ok(primary) = primary_query.get_single() else {
+        return;
+    };
+    if let Some(screen_pos) = primary.cursor_position() {
         let world_ray = camera
             .viewport_to_world(camera_transform, screen_pos)
             .unwrap();

@@ -37,14 +37,16 @@ impl Plugin for PlayerPlugin {
                 0.1,
                 TimerMode::Repeating,
             )))    
-            .add_startup_system(setup)
-            .add_system_set(
-                SystemSet::on_update(GameState::Playing)
-                    .with_system(move_player)
-                    .with_system(player_melee_attack)
-                    .with_system(player_shoot_attack)
-                    .with_system(move_player_bullets)
-                    .with_system(change_weapon)
+            .add_system(setup.on_startup())
+            .add_systems(
+                (
+                    move_player,
+                    player_melee_attack,
+                    player_shoot_attack,
+                    move_player_bullets,
+                    change_weapon,
+                )
+                .in_set(OnUpdate(GameState::Playing)),
             );
     }
 }

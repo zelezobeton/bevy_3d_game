@@ -25,8 +25,7 @@ pub enum EnemyType {
     Chasing,
     Pistol,
     Shotgun,
-    Star,
-    Boss
+    Star
 }
 
 #[derive(Component)]
@@ -52,49 +51,18 @@ impl Plugin for EnemiesPlugin {
             7.0,
             TimerMode::Repeating,
         )))
-        .add_system_set(
-            SystemSet::on_update(GameState::Playing)
-                .with_system(spawn_enemies)
-                .with_system(rotate_enemy)
-                .with_system(move_enemy)
-                .with_system(enemy_melee_attack)
-                .with_system(enemy_shoot_attack)
-                .with_system(move_enemy_bullets)
+        .add_systems(
+            (
+                spawn_enemies,
+                rotate_enemy,
+                move_enemy,
+                enemy_melee_attack,
+                enemy_shoot_attack,
+                move_enemy_bullets
+            )
+            .in_set(OnUpdate(GameState::Playing)),
         );
     }
-}
-
-fn spawn_boss_enemy(
-    enemy_type: EnemyType,
-    model: &str,
-    commands: &mut Commands,
-    asset_server: &Res<AssetServer>,
-) {
-    let mut rng = rand::thread_rng();
-    let angle: f32 = rng.gen_range(0.0..1.0) * PI * 2.0;
-    let x = angle.sin() * 7.0;
-    let z = angle.cos() * 7.0;
-    commands
-        .spawn(Enemy{enemy_state: EnemyState::Attacking, enemy_type: enemy_type})
-        .insert(Health(3))
-        .insert(PbrBundle {
-            transform: Transform::from_xyz(x, 1.0, z),
-            ..default()
-        })
-        .with_children(|cell| {
-            cell.spawn(SceneBundle {
-                scene: asset_server.load(model),
-                transform: Transform {
-                    translation: Vec3::new(0.0, -2.0, 0.0),
-                    rotation: Quat::from_rotation_y(PI),
-                    scale: Vec3::new(4.0, 4.0, 4.0),
-                },
-                ..default()
-            });
-        })
-        .insert(RigidBody::Dynamic)
-        .insert(Velocity::zero())
-        .insert(Collider::capsule_y(1.0, 1.0));
 }
 
 fn spawn_enemy(
@@ -153,9 +121,6 @@ fn spawn_enemies(
         },
         4 => {
             spawn_enemy(EnemyType::Star, "models/characterVampire.glb#Scene0", &mut commands, &asset_server)
-        },
-        5 => {
-            spawn_boss_enemy(EnemyType::Boss, "models/characterAlien.glb#Scene0", &mut commands, &asset_server)
         },
         _ => unreachable!()
     }
