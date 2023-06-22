@@ -36,7 +36,7 @@ DONE:
 use rand::Rng;
 
 use bevy::render::mesh::shape as render_shape;
-use bevy::{ecs::schedule::SystemSet, prelude::*, window::PrimaryWindow};
+use bevy::{prelude::*, window::PrimaryWindow};
 use bevy_rapier3d::prelude::*;
 
 mod player;
@@ -124,7 +124,8 @@ fn main() {
                 spawn_bonus,
                 show_health,
                 spawn_bonus,
-                get_bonus
+                get_bonus,
+                create_floating_text
             )
             .in_set(OnUpdate(GameState::Playing)),
         )

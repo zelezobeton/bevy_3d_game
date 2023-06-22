@@ -1,6 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 
-use bevy::{ecs::schedule::SystemSet, prelude::*};
+use bevy::prelude::*;
 use bevy::render::mesh::shape as render_shape;
 use bevy_rapier3d::prelude::*;
 

@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 use rand::Rng;
 
 use bevy::render::mesh::shape as render_shape;
-use bevy::{ecs::schedule::SystemSet, prelude::*};
+use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
 use crate::player::Player;
