@@ -65,6 +65,34 @@ impl Plugin for EnemiesPlugin {
     }
 }
 
+fn spawn_enemies(
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    time: Res<Time>,
+    mut timer: ResMut<EnemySpawnTimer>,
+) { 
+    if timer.0.tick(time.delta()).elapsed_secs() != 0.0 && !timer.0.tick(time.delta()). finished() {
+        return;
+    }
+
+    let mut rng = rand::thread_rng();
+    match rng.gen_range(1..=4) {
+        1 => {
+            spawn_enemy(EnemyType::Chasing, "models/characterZombie.glb#Scene0", &mut commands, &asset_server)
+        },
+        2 => {
+            spawn_enemy(EnemyType::Pistol, "models/characterSkeleton.glb#Scene0", &mut commands, &asset_server)
+        }
+        3 => {
+            spawn_enemy(EnemyType::Shotgun, "models/characterGhost.glb#Scene0", &mut commands, &asset_server)
+        },
+        4 => {
+            spawn_enemy(EnemyType::Star, "models/characterVampire.glb#Scene0", &mut commands, &asset_server)
+        },
+        _ => unreachable!()
+    }
+}
+
 fn spawn_enemy(
     enemy_type: EnemyType,
     model: &str,
@@ -96,34 +124,6 @@ fn spawn_enemy(
         .insert(RigidBody::Dynamic)
         .insert(Velocity::zero())
         .insert(Collider::capsule_y(0.5, 0.5));
-}
-
-fn spawn_enemies(
-    asset_server: Res<AssetServer>,
-    mut commands: Commands,
-    time: Res<Time>,
-    mut timer: ResMut<EnemySpawnTimer>,
-) {
-    if timer.0.tick(time.delta()).elapsed_secs() != 0.0 && !timer.0.tick(time.delta()).finished() {
-        return;
-    }
-
-    let mut rng = rand::thread_rng();
-    match rng.gen_range(1..=4) {
-        1 => {
-            spawn_enemy(EnemyType::Chasing, "models/characterZombie.glb#Scene0", &mut commands, &asset_server)
-        },
-        2 => {
-            spawn_enemy(EnemyType::Pistol, "models/characterSkeleton.glb#Scene0", &mut commands, &asset_server)
-        }
-        3 => {
-            spawn_enemy(EnemyType::Shotgun, "models/characterGhost.glb#Scene0", &mut commands, &asset_server)
-        },
-        4 => {
-            spawn_enemy(EnemyType::Star, "models/characterVampire.glb#Scene0", &mut commands, &asset_server)
-        },
-        _ => unreachable!()
-    }
 }
 
 fn move_enemy_bullets(
@@ -166,35 +166,6 @@ fn move_enemy_bullets(
             }
         }
     }
-}
-
-fn spawn_bullet(
-    origin: Vec3,
-    direction: Vec3,
-    shooter: Entity,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
-    commands: &mut Commands,
-) {
-    let sphere = render_shape::Capsule {
-        depth: 0.0,
-        radius: 0.1,
-        ..default()
-    };
-    commands
-        .spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(sphere)),
-            material: materials.add(Color::BLUE.into()),
-            transform: Transform::from_translation(origin),
-            ..default()
-        })
-        .insert(EnemyBullet{
-            shooter,
-            direction,
-            start_position: origin
-        })
-        .insert(RigidBody::Dynamic)
-        .insert(Velocity::zero());
 }
 
 fn enemy_shoot_attack(
@@ -254,6 +225,35 @@ fn enemy_shoot_attack(
             }
         }
     }
+}
+
+fn spawn_bullet(
+    origin: Vec3,
+    direction: Vec3,
+    shooter: Entity,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    commands: &mut Commands,
+) {
+    let sphere = render_shape::Capsule {
+        depth: 0.0,
+        radius: 0.1,
+        ..default()
+    };
+    commands
+        .spawn(PbrBundle {
+            mesh: meshes.add(Mesh::from(sphere)),
+            material: materials.add(Color::BLUE.into()),
+            transform: Transform::from_translation(origin),
+            ..default()
+        })
+        .insert(EnemyBullet{
+            shooter,
+            direction,
+            start_position: origin
+        })
+        .insert(RigidBody::Dynamic)
+        .insert(Velocity::zero());
 }
 
 fn enemy_melee_attack(

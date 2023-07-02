@@ -6,6 +6,7 @@ use bevy_rapier3d::prelude::*;
 
 use crate::{GameState, Health, Game, Cursor, FloatingTextEvent};
 use crate::enemies::Enemy;
+use crate::bosses::Boss;
 
 #[derive(Component)]
 pub struct Player;
@@ -190,33 +191,6 @@ fn player_melee_attack(
     }
 }
 
-fn spawn_bullet(
-    origin: Vec3,
-    direction: Vec3,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
-    commands: &mut Commands,
-) {
-    let sphere = render_shape::Capsule {
-        depth: 0.0,
-        radius: 0.1,
-        ..default()
-    };
-    commands
-        .spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(sphere)),
-            material: materials.add(Color::GOLD.into()),
-            transform: Transform::from_translation(origin),
-            ..default()
-        })
-        .insert(Bullet {
-            direction,
-            start_position: origin
-        })
-        .insert(RigidBody::Dynamic)
-        .insert(Velocity::zero());
-}
-
 fn player_shoot_attack(
     mut player: Query<(&Transform, &Weapon), (With<Player>, Without<Cursor>)>,
     mut cursor_transform: Query<&Transform, (With<Cursor>, Without<Player>)>,
@@ -260,12 +234,40 @@ fn player_shoot_attack(
     }
 }
 
+fn spawn_bullet(
+    origin: Vec3,
+    direction: Vec3,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    commands: &mut Commands,
+) {
+    let sphere = render_shape::Capsule {
+        depth: 0.0,
+        radius: 0.1,
+        ..default()
+    };
+    commands
+        .spawn(PbrBundle {
+            mesh: meshes.add(Mesh::from(sphere)),
+            material: materials.add(Color::GOLD.into()),
+            transform: Transform::from_translation(origin),
+            ..default()
+        })
+        .insert(Bullet {
+            direction,
+            start_position: origin
+        })
+        .insert(RigidBody::Dynamic)
+        .insert(Velocity::zero());
+}
+
 fn move_player_bullets(
     mut bullets: Query<
         (Entity, &mut Velocity, &Bullet, &Transform),
         With<Bullet>,
     >,
-    mut enemies: Query<(Entity, &mut Health), With<Enemy>>,
+    mut enemies: Query<(Entity, &mut Health), (With<Enemy>, Without<Boss>)>,
+    mut bosses: Query<(Entity, &mut Health), (With<Boss>, Without<Enemy>)>,
     rapier_context: Res<RapierContext>,
     mut commands: Commands,
     game: ResMut<Game>,
@@ -295,12 +297,23 @@ fn move_player_bullets(
         {
             // Despawn bullet after it hits anything
             commands.entity(bullet_entity).despawn_recursive();
-
+            
+            // Manage enemy health
             for (enemy_entity, mut enemy_health) in enemies.iter_mut() {
                 if entity == enemy_entity {
                     enemy_health.0 -= 1;
                     if enemy_health.0 == 0 {
                         commands.entity(enemy_entity).despawn_recursive();
+                    }
+                }
+            }
+
+            // Manage boss health
+            for (boss_entity, mut boss_health) in bosses.iter_mut() {
+                if entity == boss_entity {
+                    boss_health.0 -= 1;
+                    if boss_health.0 == 0 {
+                        commands.entity(boss_entity).despawn_recursive();
                     }
                 }
             }

@@ -43,6 +43,25 @@ impl Plugin for BossesPlugin {
     }
 }
 
+fn spawn_bosses(
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    time: Res<Time>,
+    mut timer: ResMut<BossSpawnTimer>,
+) {
+    if timer.0.tick(time.delta()).elapsed_secs() != 0.0 && !timer.0.tick(time.delta()).finished() {
+        return;
+    }
+
+    let mut rng = rand::thread_rng();
+    match rng.gen_range(1..=1) {
+        1 => {
+            spawn_boss(BossType::Boss1, "models/characterAlien.glb#Scene0", &mut commands, &asset_server)
+        },
+        _ => unreachable!()
+    }
+}
+
 fn spawn_boss(
     boss_type: BossType,
     model: &str,
@@ -55,7 +74,7 @@ fn spawn_boss(
     let z = angle.cos() * 7.0;
     commands
         .spawn(Boss{boss_state: BossState::Attacking, boss_type: boss_type})
-        .insert(Health(3))
+        .insert(Health(5))
         .insert(PbrBundle {
             transform: Transform::from_xyz(x, 1.0, z),
             ..default()
@@ -74,25 +93,6 @@ fn spawn_boss(
         .insert(RigidBody::Dynamic)
         .insert(Velocity::zero())
         .insert(Collider::capsule_y(1.0, 1.0));
-}
-
-fn spawn_bosses(
-    asset_server: Res<AssetServer>,
-    mut commands: Commands,
-    time: Res<Time>,
-    mut timer: ResMut<BossSpawnTimer>,
-) {
-    if timer.0.tick(time.delta()).elapsed_secs() != 0.0 && !timer.0.tick(time.delta()).finished() {
-        return;
-    }
-
-    let mut rng = rand::thread_rng();
-    match rng.gen_range(1..=1) {
-        1 => {
-            spawn_boss(BossType::Boss1, "models/characterAlien.glb#Scene0", &mut commands, &asset_server)
-        },
-        _ => unreachable!()
-    }
 }
 
 fn rotate_boss(
