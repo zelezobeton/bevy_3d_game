@@ -55,7 +55,7 @@ impl Plugin for EnemiesPlugin {
             (
                 spawn_enemies,
                 rotate_enemy,
-                move_enemy,
+                move_enemies,
                 enemy_melee_attack,
                 enemy_shoot_attack,
                 move_enemy_bullets
@@ -71,7 +71,7 @@ fn spawn_enemies(
     time: Res<Time>,
     mut timer: ResMut<EnemySpawnTimer>,
 ) { 
-    if timer.0.tick(time.delta()).elapsed_secs() != 0.0 && !timer.0.tick(time.delta()). finished() {
+    if !timer.0.tick(time.delta()).finished() {
         return;
     }
 
@@ -325,7 +325,7 @@ fn rotate_enemy(
     }
 }
 
-fn move_enemy(
+fn move_enemies(
     mut enemies: Query<(&Transform, &mut Velocity, &mut Enemy), (With<Enemy>, Without<Player>)>,
     mut player_transform: Query<&Transform, (With<Player>, Without<Enemy>)>,
 ) {
