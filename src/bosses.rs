@@ -22,7 +22,8 @@ pub enum BossState {
 
 #[derive(PartialEq)]
 pub enum BossType {
-    Boss1
+    Boss1,
+    Boss2
 }
 
 #[derive(Component)]
@@ -68,14 +69,17 @@ fn spawn_bosses(
     time: Res<Time>,
     mut timer: ResMut<BossSpawnTimer>,
 ) {
-    if timer.0.tick(time.delta()).elapsed_secs() != 0.0 && !timer.0.tick(time.delta()).finished() {
+    if !timer.0.tick(time.delta()).finished() {
         return;
     }
 
     let mut rng = rand::thread_rng();
-    match rng.gen_range(1..=1) {
+    match rng.gen_range(1..=2) {
         1 => {
             spawn_boss(BossType::Boss1, "models/characterAlien.glb#Scene0", &mut commands, &asset_server)
+        },
+        2 => {
+            spawn_boss(BossType::Boss2, "models/characterSkeleton.glb#Scene0", &mut commands, &asset_server)
         },
         _ => unreachable!()
     }
@@ -173,11 +177,11 @@ fn move_boss_bullets(
 }
 
 fn move_bosses(
-    mut bosses: Query<(&Transform, &mut Velocity, &mut Boss), (With<Boss>, Without<Player>)>,
+    mut bosses: Query<(&Transform, &mut Velocity), (With<Boss>, Without<Player>)>,
     mut player_transform: Query<&Transform, (With<Player>, Without<Boss>)>,
 ) {
     const SPEED: f32 = 3.0;
-    for (boss_transform, mut boss_velocity, boss) in bosses.iter_mut() {
+    for (boss_transform, mut boss_velocity) in bosses.iter_mut() {
         // Get vector representing direction from enemy to player
         let mut direction_vec =
             player_transform.single_mut().translation - boss_transform.translation;
@@ -192,7 +196,7 @@ fn move_bosses(
             boss_transform.translation[0],
             boss_transform.translation[2],
         );
-        if vec2_player.distance(vec2_enemy) > 1.4 {
+        if vec2_player.distance(vec2_enemy) > 2.0 {
             boss_velocity.linvel[0] = direction_vec[0] * SPEED;
             boss_velocity.linvel[2] = direction_vec[2] * SPEED;
         }
@@ -267,7 +271,12 @@ fn boss_shoot_attack(
 
         match boss.boss_state {
             BossState::Attacking => {
-                spawn_bullet(boss_transform.translation - Vec3::new(0.0, 1.0, 0.0), direction, boss_entity, &mut meshes, &mut materials, &mut commands);
+                match boss.boss_type {
+                    BossType::Boss1 => {
+                        boss1_attack(boss_entity, *boss_transform, direction, &mut meshes, &mut materials, &mut commands);
+                    }
+                    BossType::Boss2 => {}
+                }
 
                 boss.boss_state = BossState::Cooldown;
             }
@@ -279,6 +288,39 @@ fn boss_shoot_attack(
                 boss.boss_state = BossState::Attacking;
             }
         }
+    }
+}
+
+fn boss1_attack(
+    boss_entity: Entity,
+    boss_transform: Transform,
+    direction: Vec3,
+    mut meshes: &mut ResMut<Assets<Mesh>>,
+    mut materials: &mut ResMut<Assets<StandardMaterial>>, 
+    mut commands: &mut Commands,
+) {
+    let translation = boss_transform.translation - Vec3::new(0.0, 1.0, 0.0);
+    let mut rng = rand::thread_rng();
+    match rng.gen_range(1..=3) {
+        1 => {
+            spawn_bullet(translation, direction, boss_entity, &mut meshes, &mut materials, &mut commands)
+        },
+        2 => {
+            spawn_bullet(translation, Quat::from_rotation_y(-0.3) * direction, boss_entity, &mut meshes, &mut materials, &mut commands);
+            spawn_bullet(translation, direction, boss_entity, &mut meshes, &mut materials, &mut commands);
+            spawn_bullet(translation, Quat::from_rotation_y(0.3) * direction, boss_entity, &mut meshes, &mut materials, &mut commands)
+        },
+        3 => {
+            spawn_bullet(translation, Vec3::new(1.0, 0.0, 0.0), boss_entity, &mut meshes, &mut materials, &mut commands);
+            spawn_bullet(translation, Vec3::new(0.0, 0.0, 1.0), boss_entity, &mut meshes, &mut materials, &mut commands);
+            spawn_bullet(translation, Vec3::new(0.0, 0.0, -1.0), boss_entity, &mut meshes, &mut materials, &mut commands);
+            spawn_bullet(translation, Vec3::new(-1.0, 0.0, 0.0), boss_entity, &mut meshes, &mut materials, &mut commands);
+            spawn_bullet(translation, Vec3::new(1.0, 0.0, 1.0), boss_entity, &mut meshes, &mut materials, &mut commands);
+            spawn_bullet(translation, Vec3::new(-1.0, 0.0, 1.0), boss_entity, &mut meshes, &mut materials, &mut commands);
+            spawn_bullet(translation, Vec3::new(1.0, 0.0, -1.0), boss_entity, &mut meshes, &mut materials, &mut commands);
+            spawn_bullet(translation, Vec3::new(-1.0, 0.0, -1.0), boss_entity, &mut meshes, &mut materials, &mut commands);
+        },
+        _ => unreachable!()
     }
 }
 

@@ -1,6 +1,7 @@
 /*
 TODO:
-- Add boss with few special attacks
+- Add boss that shoots autonomous missiles
+- Make all velocity depend on time.delta_seconds()
 - Add text information when attacks happens (floating text)
 - Create custom meshes for enemies? (choose theme)
 
@@ -8,6 +9,7 @@ LONGTERM:
 - Add levels with different layout, platforms etc.
 
 DONE:
+- Add boss with few special attacks
 - Add different kinds of enemies
   - One with shotgun shooting 3 balls
   - One that shoots 8 balls around itself
