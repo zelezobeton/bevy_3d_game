@@ -126,48 +126,6 @@ fn spawn_enemy(
         .insert(Collider::capsule_y(0.5, 0.5));
 }
 
-fn move_enemy_bullets(
-    mut bullets: Query<
-        (Entity, &mut Velocity, &EnemyBullet, &Transform),
-        With<EnemyBullet>,
-    >,
-    mut player: Query<(Entity, &mut Health), With<Player>>,
-    rapier_context: Res<RapierContext>,
-    mut commands: Commands,
-) {
-    const SPEED: f32 = 10.0;
-    for (bullet_entity, mut vel, bullet_struct, transform) in bullets.iter_mut() {
-        // Despawn bullet after certain distance traveled
-        if bullet_struct.start_position.distance(transform.translation) > 20.0 {
-            commands.entity(bullet_entity).despawn_recursive();
-        }
-
-        vel.linvel[0] = bullet_struct.direction.x * SPEED;
-        vel.linvel[2] = bullet_struct.direction.z * SPEED;
-
-        let shape = Collider::ball(0.1);
-        let shape_pos = transform.translation;
-        let shape_rot = transform.rotation;
-        let shape_vel = vel.linvel;
-        let max_toi = 0.0;
-        let filter = QueryFilter {
-            exclude_collider: Some(bullet_struct.shooter),
-            ..default()
-        };
-
-        if let Some((entity, _hit)) =
-            rapier_context.cast_shape(shape_pos, shape_rot, shape_vel, &shape, max_toi, filter)
-        {
-            // Despawn bullet after it hits anything
-            commands.entity(bullet_entity).despawn_recursive();
-
-            if entity == player.single().0 {
-                player.single_mut().1 .0 -= 1;
-            }
-        }
-    }
-}
-
 fn enemy_shoot_attack(
     mut player: Query<(&Transform, &mut Health), (With<Player>, Without<Enemy>)>,
     mut enemies: Query<
@@ -256,6 +214,49 @@ fn spawn_bullet(
         .insert(Velocity::zero());
 }
 
+fn move_enemy_bullets(
+    mut bullets: Query<
+        (Entity, &mut Velocity, &EnemyBullet, &Transform),
+        With<EnemyBullet>,
+    >,
+    mut player: Query<(Entity, &mut Health), With<Player>>,
+    rapier_context: Res<RapierContext>,
+    mut commands: Commands,
+    time: Res<Time>,
+) {
+    const SPEED: f32 = 600.0;
+    for (bullet_entity, mut vel, bullet_struct, transform) in bullets.iter_mut() {
+        // Despawn bullet after certain distance traveled
+        if bullet_struct.start_position.distance(transform.translation) > 20.0 {
+            commands.entity(bullet_entity).despawn_recursive();
+        }
+
+        vel.linvel[0] = bullet_struct.direction.x * SPEED * time.delta_seconds();
+        vel.linvel[2] = bullet_struct.direction.z * SPEED * time.delta_seconds();
+
+        let shape = Collider::ball(0.1);
+        let shape_pos = transform.translation;
+        let shape_rot = transform.rotation;
+        let shape_vel = vel.linvel;
+        let max_toi = 0.0;
+        let filter = QueryFilter {
+            exclude_collider: Some(bullet_struct.shooter),
+            ..default()
+        };
+
+        if let Some((entity, _hit)) =
+            rapier_context.cast_shape(shape_pos, shape_rot, shape_vel, &shape, max_toi, filter)
+        {
+            // Despawn bullet after it hits anything
+            commands.entity(bullet_entity).despawn_recursive();
+
+            if entity == player.single().0 {
+                player.single_mut().1 .0 -= 1;
+            }
+        }
+    }
+}
+
 fn enemy_melee_attack(
     mut enemies: Query<(&Transform, &mut Enemy), With<Enemy>>,
     mut player: Query<(Entity, &mut Health, &Transform), With<Player>>,
@@ -328,8 +329,9 @@ fn rotate_enemies(
 fn move_enemies(
     mut enemies: Query<(&Transform, &mut Velocity, &mut Enemy), (With<Enemy>, Without<Player>)>,
     mut player_transform: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    time: Res<Time>,
 ) {
-    const SPEED: f32 = 6.0;
+    const SPEED: f32 = 200.0;
     for (enemy_transform, mut enemy_velocity, enemy) in enemies.iter_mut() {
         if enemy.enemy_type != EnemyType::Chasing {
             continue
@@ -350,8 +352,8 @@ fn move_enemies(
             enemy_transform.translation[2],
         );
         if vec2_player.distance(vec2_enemy) > 1.4 {
-            enemy_velocity.linvel[0] = direction_vec[0] * SPEED;
-            enemy_velocity.linvel[2] = direction_vec[2] * SPEED;
+            enemy_velocity.linvel[0] = direction_vec[0] * SPEED * time.delta_seconds();
+            enemy_velocity.linvel[2] = direction_vec[2] * SPEED * time.delta_seconds();
         }
     }
 }

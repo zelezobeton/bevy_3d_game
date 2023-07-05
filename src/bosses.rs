@@ -82,7 +82,7 @@ fn spawn_bosses(
     }
 
     let mut rng = rand::thread_rng();
-    match rng.gen_range(2..=2) {
+    match rng.gen_range(1..=2) {
         1 => {
             spawn_boss(BossType::Boss1, "models/characterAlien.glb#Scene0", &mut commands, &asset_server)
         },
@@ -142,99 +142,12 @@ fn rotate_bosses(
     }
 }
 
-fn move_boss_bullets(
-    mut bullets: Query<
-        (Entity, &mut Velocity, &BossBullet, &Transform),
-        With<BossBullet>,
-    >,
-    mut player: Query<(Entity, &mut Health), With<Player>>,
-    rapier_context: Res<RapierContext>,
-    mut commands: Commands,
-) {
-    const SPEED: f32 = 10.0;
-    for (bullet_entity, mut vel, bullet_struct, transform) in bullets.iter_mut() {
-        // Despawn bullet after certain distance traveled
-        if bullet_struct.start_position.distance(transform.translation) > 20.0 {
-            commands.entity(bullet_entity).despawn_recursive();
-        }
-
-        vel.linvel[0] = bullet_struct.direction.x * SPEED;
-        vel.linvel[2] = bullet_struct.direction.z * SPEED;
-
-        let shape = Collider::ball(0.1);
-        let shape_pos = transform.translation;
-        let shape_rot = transform.rotation;
-        let shape_vel = vel.linvel;
-        let max_toi = 0.0;
-        let filter = QueryFilter {
-            exclude_collider: Some(bullet_struct.shooter),
-            ..default()
-        };
-
-        if let Some((entity, _hit)) =
-            rapier_context.cast_shape(shape_pos, shape_rot, shape_vel, &shape, max_toi, filter)
-        {
-            // Despawn bullet after it hits anything
-            commands.entity(bullet_entity).despawn_recursive();
-
-            if entity == player.single().0 {
-                player.single_mut().1 .0 -= 1;
-            }
-        }
-    }
-}
-
-fn move_boss_missiles(
-    mut missiles: Query<
-        (Entity, &mut Velocity, &BossMissile, &Transform),
-        With<BossMissile>,
-    >,
-    mut player: Query<(Entity, &mut Health, &Transform), With<Player>>,
-    rapier_context: Res<RapierContext>,
-    mut commands: Commands,
-) {
-    const SPEED: f32 = 4.0;
-    for (missile_entity, mut missile_vel, missile_struct, missile_transform) in missiles.iter_mut() {
-        // Despawn bullet after certain time traveled
-        if missile_struct.origin_time.elapsed().as_secs() > 4 {
-            commands.entity(missile_entity).despawn_recursive();
-        }
-
-        // Get vector representing direction from enemy to player
-        let mut direction_vec = player.single_mut().2.translation - missile_transform.translation;
-        direction_vec = direction_vec.normalize();
-
-        missile_vel.linvel[0] = direction_vec[0] * SPEED;
-        missile_vel.linvel[2] = direction_vec[2] * SPEED;
-
-        let shape = Collider::ball(0.1);
-        let shape_pos = missile_transform.translation;
-        let shape_rot = missile_transform.rotation;
-        let shape_vel = missile_vel.linvel;
-        let max_toi = 0.0;
-        let filter = QueryFilter {
-            exclude_collider: Some(missile_struct.shooter),
-            ..default()
-        };
-
-        if let Some((entity, _hit)) =
-            rapier_context.cast_shape(shape_pos, shape_rot, shape_vel, &shape, max_toi, filter)
-        {
-            // Despawn bullet after it hits anything
-            commands.entity(missile_entity).despawn_recursive();
-
-            if entity == player.single().0 {
-                player.single_mut().1.0 -= 1;
-            }
-        }
-    }
-}
-
 fn move_bosses(
     mut bosses: Query<(&Transform, &mut Velocity), (With<Boss>, Without<Player>)>,
     mut player_transform: Query<&Transform, (With<Player>, Without<Boss>)>,
+    time: Res<Time>,
 ) {
-    const SPEED: f32 = 3.0;
+    const SPEED: f32 = 100.0;
     for (boss_transform, mut boss_velocity) in bosses.iter_mut() {
         // Get vector representing direction from enemy to player
         let mut direction_vec =
@@ -251,8 +164,8 @@ fn move_bosses(
             boss_transform.translation[2],
         );
         if vec2_player.distance(vec2_enemy) > 2.0 {
-            boss_velocity.linvel[0] = direction_vec[0] * SPEED;
-            boss_velocity.linvel[2] = direction_vec[2] * SPEED;
+            boss_velocity.linvel[0] = direction_vec[0] * SPEED * time.delta_seconds();
+            boss_velocity.linvel[2] = direction_vec[2] * SPEED * time.delta_seconds();
         }
     }
 }
@@ -409,6 +322,49 @@ fn spawn_bullet(
         .insert(Velocity::zero());
 }
 
+fn move_boss_bullets(
+    mut bullets: Query<
+        (Entity, &mut Velocity, &BossBullet, &Transform),
+        With<BossBullet>,
+    >,
+    mut player: Query<(Entity, &mut Health), With<Player>>,
+    rapier_context: Res<RapierContext>,
+    mut commands: Commands,
+    time: Res<Time>,
+) {
+    const SPEED: f32 = 600.0;
+    for (bullet_entity, mut vel, bullet_struct, transform) in bullets.iter_mut() {
+        // Despawn bullet after certain distance traveled
+        if bullet_struct.start_position.distance(transform.translation) > 20.0 {
+            commands.entity(bullet_entity).despawn_recursive();
+        }
+
+        vel.linvel[0] = bullet_struct.direction.x * SPEED * time.delta_seconds();
+        vel.linvel[2] = bullet_struct.direction.z * SPEED * time.delta_seconds();
+
+        let shape = Collider::ball(0.1);
+        let shape_pos = transform.translation;
+        let shape_rot = transform.rotation;
+        let shape_vel = vel.linvel;
+        let max_toi = 0.0;
+        let filter = QueryFilter {
+            exclude_collider: Some(bullet_struct.shooter),
+            ..default()
+        };
+
+        if let Some((entity, _hit)) =
+            rapier_context.cast_shape(shape_pos, shape_rot, shape_vel, &shape, max_toi, filter)
+        {
+            // Despawn bullet after it hits anything
+            commands.entity(bullet_entity).despawn_recursive();
+
+            if entity == player.single().0 {
+                player.single_mut().1 .0 -= 1;
+            }
+        }
+    }
+}
+
 fn spawn_missile(
     origin: Vec3,
     shooter: Entity,
@@ -434,4 +390,51 @@ fn spawn_missile(
         })
         .insert(RigidBody::Dynamic)
         .insert(Velocity::zero());
+}
+
+fn move_boss_missiles(
+    mut missiles: Query<
+        (Entity, &mut Velocity, &BossMissile, &Transform),
+        With<BossMissile>,
+    >,
+    mut player: Query<(Entity, &mut Health, &Transform), With<Player>>,
+    rapier_context: Res<RapierContext>,
+    mut commands: Commands,
+    time: Res<Time>,
+) {
+    const SPEED: f32 = 200.0;
+    for (missile_entity, mut missile_vel, missile_struct, missile_transform) in missiles.iter_mut() {
+        // Despawn bullet after certain time traveled
+        if missile_struct.origin_time.elapsed().as_secs() > 4 {
+            commands.entity(missile_entity).despawn_recursive();
+        }
+
+        // Get vector representing direction from enemy to player
+        let mut direction_vec = player.single_mut().2.translation - missile_transform.translation;
+        direction_vec = direction_vec.normalize();
+
+        missile_vel.linvel[0] = direction_vec[0] * SPEED * time.delta_seconds();
+        missile_vel.linvel[2] = direction_vec[2] * SPEED * time.delta_seconds();
+
+        let shape = Collider::ball(0.1);
+        let shape_pos = missile_transform.translation;
+        let shape_rot = missile_transform.rotation;
+        let shape_vel = missile_vel.linvel;
+        let max_toi = 0.0;
+        let filter = QueryFilter {
+            exclude_collider: Some(missile_struct.shooter),
+            ..default()
+        };
+
+        if let Some((entity, _hit)) =
+            rapier_context.cast_shape(shape_pos, shape_rot, shape_vel, &shape, max_toi, filter)
+        {
+            // Despawn bullet after it hits anything
+            commands.entity(missile_entity).despawn_recursive();
+
+            if entity == player.single().0 {
+                player.single_mut().1.0 -= 1;
+            }
+        }
+    }
 }

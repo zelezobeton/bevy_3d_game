@@ -271,16 +271,17 @@ fn move_player_bullets(
     rapier_context: Res<RapierContext>,
     mut commands: Commands,
     game: ResMut<Game>,
+    time: Res<Time>,
 ) {
-    const SPEED: f32 = 15.0;
+    const SPEED: f32 = 600.0;
     for (bullet_entity, mut vel, bullet_struct, transform) in bullets.iter_mut() {
         // Despawn bullet after certain distance traveled
         if bullet_struct.start_position.distance(transform.translation) > 20.0 {
             commands.entity(bullet_entity).despawn_recursive();
         }
 
-        vel.linvel[0] = bullet_struct.direction.x * SPEED;
-        vel.linvel[2] = bullet_struct.direction.z * SPEED;
+        vel.linvel[0] = bullet_struct.direction.x * SPEED * time.delta_seconds();
+        vel.linvel[2] = bullet_struct.direction.z * SPEED * time.delta_seconds();
 
         let shape = Collider::ball(0.1);
         let shape_pos = transform.translation;
