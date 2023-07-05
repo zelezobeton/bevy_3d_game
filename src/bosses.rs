@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
-use rand::Rng;
+use std::time::Instant;
 
+use rand::Rng;
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 use bevy::render::mesh::shape as render_shape;
@@ -13,6 +14,12 @@ struct BossBullet{
     shooter: Entity,
     direction: Vec3,
     start_position: Vec3
+}
+
+#[derive(Component)]
+pub struct BossMissile{
+    shooter: Entity,
+    origin_time: Instant
 }
 
 pub enum BossState {
@@ -52,11 +59,12 @@ impl Plugin for BossesPlugin {
         .add_systems(
             (
                 spawn_bosses,
-                rotate_boss,
+                rotate_bosses,
                 boss_shoot_attack,
                 move_boss_bullets,
                 move_bosses,
-                boss_melee_attack
+                boss_melee_attack,
+                move_boss_missiles
             )
             .in_set(OnUpdate(GameState::Playing)),
         );
@@ -74,7 +82,7 @@ fn spawn_bosses(
     }
 
     let mut rng = rand::thread_rng();
-    match rng.gen_range(1..=2) {
+    match rng.gen_range(2..=2) {
         1 => {
             spawn_boss(BossType::Boss1, "models/characterAlien.glb#Scene0", &mut commands, &asset_server)
         },
@@ -118,7 +126,7 @@ fn spawn_boss(
         .insert(Collider::capsule_y(1.0, 1.0));
 }
 
-fn rotate_boss(
+fn rotate_bosses(
     mut bosses: Query<&mut Transform, (With<Boss>, Without<Player>)>,
     mut player_transform: Query<&Transform, (With<Player>, Without<Boss>)>,
 ) {
@@ -171,6 +179,52 @@ fn move_boss_bullets(
 
             if entity == player.single().0 {
                 player.single_mut().1 .0 -= 1;
+            }
+        }
+    }
+}
+
+fn move_boss_missiles(
+    mut missiles: Query<
+        (Entity, &mut Velocity, &BossMissile, &Transform),
+        With<BossMissile>,
+    >,
+    mut player: Query<(Entity, &mut Health, &Transform), With<Player>>,
+    rapier_context: Res<RapierContext>,
+    mut commands: Commands,
+) {
+    const SPEED: f32 = 4.0;
+    for (missile_entity, mut missile_vel, missile_struct, missile_transform) in missiles.iter_mut() {
+        // Despawn bullet after certain time traveled
+        if missile_struct.origin_time.elapsed().as_secs() > 4 {
+            commands.entity(missile_entity).despawn_recursive();
+        }
+
+        // Get vector representing direction from enemy to player
+        let mut direction_vec = player.single_mut().2.translation - missile_transform.translation;
+        direction_vec = direction_vec.normalize();
+
+        missile_vel.linvel[0] = direction_vec[0] * SPEED;
+        missile_vel.linvel[2] = direction_vec[2] * SPEED;
+
+        let shape = Collider::ball(0.1);
+        let shape_pos = missile_transform.translation;
+        let shape_rot = missile_transform.rotation;
+        let shape_vel = missile_vel.linvel;
+        let max_toi = 0.0;
+        let filter = QueryFilter {
+            exclude_collider: Some(missile_struct.shooter),
+            ..default()
+        };
+
+        if let Some((entity, _hit)) =
+            rapier_context.cast_shape(shape_pos, shape_rot, shape_vel, &shape, max_toi, filter)
+        {
+            // Despawn bullet after it hits anything
+            commands.entity(missile_entity).despawn_recursive();
+
+            if entity == player.single().0 {
+                player.single_mut().1.0 -= 1;
             }
         }
     }
@@ -275,7 +329,9 @@ fn boss_shoot_attack(
                     BossType::Boss1 => {
                         boss1_attack(boss_entity, *boss_transform, direction, &mut meshes, &mut materials, &mut commands);
                     }
-                    BossType::Boss2 => {}
+                    BossType::Boss2 => {
+                        spawn_missile(boss_transform.translation - Vec3::new(0.0, 1.25, 0.0), boss_entity, &mut meshes, &mut materials, &mut commands);
+                    }
                 }
 
                 boss.boss_state = BossState::Cooldown;
@@ -348,6 +404,33 @@ fn spawn_bullet(
             shooter,
             direction,
             start_position: origin
+        })
+        .insert(RigidBody::Dynamic)
+        .insert(Velocity::zero());
+}
+
+fn spawn_missile(
+    origin: Vec3,
+    shooter: Entity,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    commands: &mut Commands,
+) {
+    let sphere = render_shape::Capsule {
+        depth: 0.0,
+        radius: 0.5,
+        ..default()
+    };
+    commands
+        .spawn(PbrBundle {
+            mesh: meshes.add(Mesh::from(sphere)),
+            material: materials.add(Color::RED.into()),
+            transform: Transform::from_translation(origin),
+            ..default()
+        })
+        .insert(BossMissile{
+            shooter,
+            origin_time: Instant::now()
         })
         .insert(RigidBody::Dynamic)
         .insert(Velocity::zero());

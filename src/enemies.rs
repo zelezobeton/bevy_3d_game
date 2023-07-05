@@ -54,7 +54,7 @@ impl Plugin for EnemiesPlugin {
         .add_systems(
             (
                 spawn_enemies,
-                rotate_enemy,
+                rotate_enemies,
                 move_enemies,
                 enemy_melee_attack,
                 enemy_shoot_attack,
@@ -309,7 +309,7 @@ fn enemy_melee_attack(
     }
 }
 
-fn rotate_enemy(
+fn rotate_enemies(
     mut enemies: Query<&mut Transform, (With<Enemy>, Without<Player>)>,
     mut player_transform: Query<&Transform, (With<Player>, Without<Enemy>)>,
 ) {
