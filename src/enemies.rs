@@ -52,6 +52,7 @@ impl Plugin for EnemiesPlugin {
             TimerMode::Repeating,
         )))
         .add_systems(
+            Update,
             (
                 spawn_enemies,
                 rotate_enemies,
@@ -60,7 +61,7 @@ impl Plugin for EnemiesPlugin {
                 enemy_shoot_attack,
                 move_enemy_bullets
             )
-            .in_set(OnUpdate(GameState::Playing)),
+            .in_set(GameState::Playing),
         );
     }
 }

@@ -1,5 +1,8 @@
 /*
 TODO:
+- Make boss with falling missiles around
+- Make boss with lasers
+- Make game run using webassembly on Github page
 - Create custom meshes for enemies? (choose theme)
 
 LONGTERM:
@@ -46,7 +49,7 @@ mod enemies;
 mod bosses;
 use player::Player;
 
-#[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States, SystemSet)]
 enum GameState {
     #[default]
     Playing,
@@ -73,6 +76,7 @@ pub struct FloatingText {
     pub time_to_live: f32,
 }
 
+#[derive(Event)]
 pub struct FloatingTextEvent {
     pub translation: Vec3,
     pub text: String,
@@ -102,24 +106,27 @@ const DEFAULT_CAMERA_POS: [f32; 3] = [-7.0, 10.0, 0.0];
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugin(RapierPhysicsPlugin::<NoUserData>::default())
+        .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         // .add_plugin(RapierDebugRenderPlugin::default())
-        .add_plugin(player::PlayerPlugin)
-        .add_plugin(enemies::EnemiesPlugin)
-        .add_plugin(bosses::BossesPlugin)
+        .add_plugins(player::PlayerPlugin)
+        .add_plugins(enemies::EnemiesPlugin)
+        .add_plugins(bosses::BossesPlugin)
         .init_resource::<Game>()
         .insert_resource(BonusSpawnTimer(Timer::from_seconds(
             5.0,
             TimerMode::Repeating,
         )))
         .add_state::<GameState>()
-        .add_systems((
-            setup_camera.on_startup(),
-            setup_light.on_startup(),
-            spawn_level.on_startup(),
-            setup.in_schedule(OnEnter(GameState::Playing)),
+        .add_systems(
+            Startup,
+        (
+            setup_camera,
+            setup_light,
+            spawn_level,
+            setup.in_set(GameState::Playing),
         ))
         .add_systems(
+            Update,
             (
                 move_cursor,
                 move_camera,
@@ -129,10 +136,10 @@ fn main() {
                 get_bonus,
                 create_floating_text
             )
-            .in_set(OnUpdate(GameState::Playing)),
+            .in_set(GameState::Playing),
         )
         .add_event::<FloatingTextEvent>()
-        .add_system(bevy::window::close_on_esc)
+        .add_systems(Update, bevy::window::close_on_esc)
         .run();
 }
 
@@ -159,11 +166,8 @@ fn create_floating_text(
                         )
                         .with_style(Style {
                             position_type: PositionType::Absolute,
-                            position: UiRect {
-                                bottom: Val::Px(coords.y),
-                                left: Val::Px(coords.x),
-                                ..default()
-                            },
+                            bottom: Val::Px(coords.y),
+                            left: Val::Px(coords.x),
                             ..default()
                         }),
                     )
@@ -200,11 +204,8 @@ fn setup(asset_server: Res<AssetServer>, mut game: ResMut<Game>, mut commands: C
         )
         .with_style(Style {
             position_type: PositionType::Absolute,
-            position: UiRect {
-                top: Val::Px(5.0),
-                left: Val::Px(5.0),
-                ..default()
-            },
+            top: Val::Px(5.0),
+            left: Val::Px(5.0),
             ..default()
         }),
     ).insert(HealthText);

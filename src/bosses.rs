@@ -57,6 +57,7 @@ impl Plugin for BossesPlugin {
             TimerMode::Repeating,
         )))
         .add_systems(
+            Update,
             (
                 spawn_bosses,
                 rotate_bosses,
@@ -66,7 +67,7 @@ impl Plugin for BossesPlugin {
                 boss_melee_attack,
                 move_boss_missiles
             )
-            .in_set(OnUpdate(GameState::Playing)),
+            .in_set(GameState::Playing),
         );
     }
 }
